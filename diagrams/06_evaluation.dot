@@ -1,0 +1,10 @@
+digraph eval { graph [bgcolor="transparent",pad="0.20",nodesep="0.48",ranksep="0.60",fontname="Lato",fontsize=11,splines=ortho]; node [shape=box,style="rounded,filled",fontname="Lato",fontsize=10,penwidth=1.2,color="#B9CBDA",fillcolor="#EAF3F7",fontcolor="#17334A",margin="0.20,0.13"]; edge [fontname="Lato",fontsize=9,color="#638299",fontcolor="#46647A",arrowsize=.70,penwidth=1.25]; rankdir=TB;
+ snapshot [label="Immutable observation snapshots\ncutoff-time reconstructed features",fillcolor="#D8F0E6"];
+ gate [label="Panel/rights gate + completeness filter\nexclude gaps and contaminated cutoffs"];
+ splits [label="Chronological folds\ntrain -> tuning -> embargo -> sealed final"];
+ runners [label="Same candidates; same cutoff; same labels\nzero / momentum / volume / candidate"];
+ metrics [label="Paired Precision@5 + calibration\nprevalence, lead-time, blocked bootstrap"];
+ audit [label="Independent audit\nhashes | counts | provenance | model registry",fillcolor="#F1E7FA"];
+ decision [label="GO / HOLD / KILL\nwith separate data / model / utility decisions",fillcolor="#FAEECF"];
+ snapshot -> gate -> splits -> runners -> metrics -> audit -> decision;
+ }

@@ -1,0 +1,16 @@
+digraph deploy { graph [bgcolor="transparent",pad="0.20",nodesep="0.48",ranksep="0.60",fontname="Lato",fontsize=11,splines=ortho]; node [shape=box,style="rounded,filled",fontname="Lato",fontsize=10,penwidth=1.2,color="#B9CBDA",fillcolor="#EAF3F7",fontcolor="#17334A",margin="0.20,0.13"]; edge [fontname="Lato",fontsize=9,color="#638299",fontcolor="#46647A",arrowsize=.70,penwidth=1.25]; rankdir=LR;
+ user [label="Editor browser\nHTTPS + SSO/MFA",fillcolor="#D8F0E6"];
+ subgraph cluster_host {label="Single controlled cloud environment (pilot)";color="#A9C1D1";style="rounded,dashed";
+ gateway [label="Reverse proxy\nTLS termination / rate-limit",fillcolor="#E3F0F9"];
+ app [label="API + Web static assets\nnon-root container"];
+ job [label="Scheduler + worker container\nallowlisted egress"];
+ db [label="Managed PostgreSQL\nbackups + encryption",shape=cylinder,fillcolor="#F4E8D9"];
+ obj [label="Object storage\nsource-permission ACL",shape=cylinder,fillcolor="#F4E8D9"];
+ mon [label="Structured logs / metrics\nalerts + audit hashes",fillcolor="#F0E8F6"];
+ }
+ sources [label="Permitted source hosts"];
+ user -> gateway -> app -> db;
+ sources -> job -> db;
+ job -> obj;
+ app -> mon [style=dashed]; job -> mon [style=dashed];
+ }

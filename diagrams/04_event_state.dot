@@ -1,0 +1,16 @@
+digraph states { graph [bgcolor="transparent",pad="0.20",nodesep="0.48",ranksep="0.60",fontname="Lato",fontsize=11,splines=ortho]; node [shape=box,style="rounded,filled",fontname="Lato",fontsize=10,penwidth=1.2,color="#B9CBDA",fillcolor="#EAF3F7",fontcolor="#17334A",margin="0.20,0.13"]; edge [fontname="Lato",fontsize=9,color="#638299",fontcolor="#46647A",arrowsize=.70,penwidth=1.25]; rankdir=TB;
+ unseen [label="UNSEEN",fillcolor="#F2F5F7"];
+ candidate [label="CANDIDATE\ninitial mentions"];
+ active [label="ACTIVE\nconfirmed event cluster",fillcolor="#D8F0E6"];
+ cooling [label="COOLING\nlow recent activity",fillcolor="#FAEECF"];
+ closed [label="CLOSED\nretained snapshot",fillcolor="#F2F5F7"];
+ quarantine [label="QUARANTINED\nambiguous / unsafe",fillcolor="#FBE6E3"];
+ unseen -> candidate [label="first eligible item"];
+ candidate -> active [label="cluster validation"];
+ candidate -> quarantine [label="uncertain / conflict"];
+ active -> cooling [label="inactivity threshold"];
+ cooling -> active [label="new eligible mention"];
+ cooling -> closed [label="retention window"];
+ active -> quarantine [label="merge dispute"];
+ quarantine -> active [label="human adjudication"];
+ }

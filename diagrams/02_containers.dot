@@ -1,0 +1,13 @@
+digraph containers { graph [bgcolor="transparent",pad="0.20",nodesep="0.48",ranksep="0.60",fontname="Lato",fontsize=11,splines=ortho]; node [shape=box,style="rounded,filled",fontname="Lato",fontsize=10,penwidth=1.2,color="#B9CBDA",fillcolor="#EAF3F7",fontcolor="#17334A",margin="0.20,0.13"]; edge [fontname="Lato",fontsize=9,color="#638299",fontcolor="#46647A",arrowsize=.70,penwidth=1.25]; rankdir=TB;
+ subgraph cluster_boundary {label="PULSE application boundary | modular monolith + workers"; color="#A4C2D4"; style="rounded,dashed";
+ web [label="Review Web UI\nReact / TypeScript",fillcolor="#D8F0E6"];
+ api [label="Application API\nFastAPI + RBAC",fillcolor="#CCE1F8"];
+ worker [label="Ingestion Worker\nfetch | validate | deduplicate",fillcolor="#CCE1F8"];
+ detect [label="Event Intelligence Worker\nlink | cluster | version",fillcolor="#CCE1F8"];
+ forecast [label="Forecast Worker\nbaseline | model | rank",fillcolor="#CCE1F8"];
+ db [label="PostgreSQL\nobservations | provenance | outbox",shape=cylinder,fillcolor="#F3E9DA"];
+ store [label="Object Store\nlicensed raw snapshots",shape=cylinder,fillcolor="#F3E9DA"];
+ }
+ ext [label="Authorized RSS / Export Sources",fillcolor="#F1F4F6"];
+ web -> api; api -> db; ext -> worker; worker -> store; worker -> db; db -> detect; detect -> db; db -> forecast; forecast -> db; api -> forecast [label="read predictions",style=dashed];
+ }

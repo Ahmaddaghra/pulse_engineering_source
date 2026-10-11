@@ -1,0 +1,15 @@
+digraph ingress { graph [bgcolor="transparent",pad="0.20",nodesep="0.48",ranksep="0.60",fontname="Lato",fontsize=11,splines=ortho]; node [shape=box,style="rounded,filled",fontname="Lato",fontsize=10,penwidth=1.2,color="#B9CBDA",fillcolor="#EAF3F7",fontcolor="#17334A",margin="0.20,0.13"]; edge [fontname="Lato",fontsize=9,color="#638299",fontcolor="#46647A",arrowsize=.70,penwidth=1.25]; rankdir=LR;
+ source [label="Publisher RSS\nallowlisted host"];
+ fetch [label="Fetch with conditional GET\nETag / Last-Modified"];
+ audit [label="Store immutable fetch receipt\nstatus / hash / first-seen UTC"];
+ parse [label="Parse safely\nno DTD / size limits"];
+ rights [label="Source policy gate\nlicense + retention"];
+ norm [label="Normalize + canonicalize\nURL, title, time"];
+ dedup [label="Deduplicate\ncanonical URL + hash"];
+ records [label="Persist provenance-linked\narticle metadata",fillcolor="#D8F0E6"];
+ stop [label="Quarantine / disabled\nno silent fallback",fillcolor="#FBE6E3",color="#D79A91"];
+ source -> fetch -> audit -> parse -> rights -> norm -> dedup -> records;
+ fetch -> stop [label="429 / invalid",color="#BA716A"];
+ parse -> stop [label="malformed",color="#BA716A"];
+ rights -> stop [label="prohibited",color="#BA716A"];
+ }

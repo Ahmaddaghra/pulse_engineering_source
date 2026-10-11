@@ -1,0 +1,12 @@
+digraph context { graph [bgcolor="transparent",pad="0.20",nodesep="0.48",ranksep="0.60",fontname="Lato",fontsize=11,splines=ortho]; node [shape=box,style="rounded,filled",fontname="Lato",fontsize=10,penwidth=1.2,color="#B9CBDA",fillcolor="#EAF3F7",fontcolor="#17334A",margin="0.20,0.13"]; edge [fontname="Lato",fontsize=9,color="#638299",fontcolor="#46647A",arrowsize=.70,penwidth=1.25]; rankdir=LR;
+ editor [label="Newsroom Editor\n(review, prioritize)",fillcolor="#D8F0E6",color="#89B9A2"];
+ lead [label="Editorial Lead\n(approve source panel)",fillcolor="#D8F0E6",color="#89B9A2"];
+ panel [label="Permitted Publisher Feeds\n(metadata and timestamps)"];
+ trends [label="Search-interest Signals\n(licensed / public exports)"];
+ pulse [label="PULSE\nEarly-signal intelligence\n[system under design]",fillcolor="#CCE1F8",color="#3679A0",penwidth=2];
+ editor -> pulse [label="inspect ranked evidence"];
+ lead -> pulse [label="policies and review"];
+ panel -> pulse [label="observations"];
+ trends -> pulse [label="optional attention proxy"];
+ pulse -> editor [label="alerts and evidence"];
+ }

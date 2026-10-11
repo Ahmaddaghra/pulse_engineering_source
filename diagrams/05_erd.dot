@@ -1,0 +1,19 @@
+digraph erd { graph [bgcolor="transparent",pad="0.20",nodesep="0.48",ranksep="0.60",fontname="Lato",fontsize=11,splines=ortho]; node [shape=box,style="rounded,filled",fontname="Lato",fontsize=10,penwidth=1.2,color="#B9CBDA",fillcolor="#EAF3F7",fontcolor="#17334A",margin="0.20,0.13"]; edge [fontname="Lato",fontsize=9,color="#638299",fontcolor="#46647A",arrowsize=.70,penwidth=1.25]; rankdir=TB; node [shape=record,style="filled",fontsize=9,margin="0.08,0.08"];
+ publisher [label="{PUBLISHER|publisher_id (PK)\llegal_owner_id\lregion; eligible\l}",fillcolor="#E1EDF8"];
+ feed [label="{SOURCE_FEED|feed_id (PK)\lpublisher_id (FK)\lpolicy_version\lstatus\l}"];
+ fetch [label="{FETCH_RECEIPT|fetch_id (PK)\lfeed_id (FK)\lfetched_at; status; hash\l}"];
+ article [label="{ARTICLE|article_id (PK)\lfeed_id (FK)\lcanonical_url; title_hash\lpublished_at; first_seen_at\l}"];
+ event [label="{EVENT|event_id (PK)\lcreated_at; state\lcluster_version\l}",fillcolor="#D8F0E6"];
+ member [label="{EVENT_MEMBERSHIP|article_id (FK)\levent_id (FK)\lassigned_at; version\l}"];
+ obs [label="{OBSERVATION|event_id (FK)\lcutoff_at; source_panel_id\lfeatures_hash\l}"];
+ pred [label="{PREDICTION|prediction_id (PK)\lcutoff_at; event_id (FK)\lmodel_version; probability\l}",fillcolor="#FFF0D6"];
+ outcome [label="{OUTCOME|prediction_id (FK)\llabel_window_end\llabel; label_version\l}"];
+ publisher -> feed [label="1 : N"];
+ feed -> fetch [label="1 : N"];
+ feed -> article [label="1 : N"];
+ article -> member [label="1 : N"];
+ event -> member [label="1 : N"];
+ event -> obs [label="1 : N"];
+ obs -> pred [label="1 : N"];
+ pred -> outcome [label="0 : 1"];
+ }

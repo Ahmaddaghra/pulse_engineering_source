@@ -1,0 +1,9 @@
+digraph delivery { graph [bgcolor="transparent",pad="0.20",nodesep="0.48",ranksep="0.60",fontname="Lato",fontsize=11,splines=ortho]; node [shape=box,style="rounded,filled",fontname="Lato",fontsize=10,penwidth=1.2,color="#B9CBDA",fillcolor="#EAF3F7",fontcolor="#17334A",margin="0.20,0.13"]; edge [fontname="Lato",fontsize=9,color="#638299",fontcolor="#46647A",arrowsize=.70,penwidth=1.25]; rankdir=TB;
+ a [label="G0 | Source rights + 3-owner pilot\nSTOP if unqualified",fillcolor="#FBE6E3"];
+ b [label="G1 | Observability + immutable capture\n7 consecutive days",fillcolor="#FFF0D6"];
+ c [label="G2 | Event clusters + reviewer QA\nadjudicated sample",fillcolor="#EAF3F7"];
+ d [label="G3 | Frozen labels + baselines\nprospective training window",fillcolor="#EAF3F7"];
+ e [label="G4 | Sealed independent evaluation\npaired lift + uncertainty",fillcolor="#D8F0E6"];
+ f [label="G5 | Editorial usefulness evidence\nethical limited rollout",fillcolor="#D8F0E6"];
+ a -> b -> c -> d -> e -> f;
+ }
