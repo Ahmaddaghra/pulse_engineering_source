@@ -10,7 +10,7 @@ qualified. Exact test revision/results and blocked requirements are in
 
 Feature branch: `feat/m1-durable-ingestion`.
 Base: `docs/pulse-v0.2-review-integration` at `d7d4eceb8ff0fa940370c8847ba6813f5b0af39f`.
-Draft pull request targets that branch and is explicitly stacked on PR #1's specification work.
+Draft [pull request #3](https://github.com/Ahmaddaghra/pulse_engineering_source/pull/3) targets that branch and is explicitly stacked on PR #1's specification work.
 PR #1 was already merged before this run; this implementation did not change or merge it.
 No push to main, production deployment or live publisher request was performed.
 Executed source revision: `3c55202bcc41b3e8ebf7b8e4ed6adb8f3a521851`.
@@ -19,7 +19,7 @@ Use `git rev-parse HEAD` for the checkout revision; the recorded test revision i
 ## Reproducible Docker development path
 
 Requirements: Git, Docker Engine with Compose v2, and two distinct locally chosen bearer secrets.
-The Docker path is configured for the CI Compose smoke job. Local execution status is reported
+The Docker path passed the hosted CI Compose smoke job (see test evidence). Local execution status is reported
 separately; `docker compose config` does not prove a working image/service.
 
 ```sh

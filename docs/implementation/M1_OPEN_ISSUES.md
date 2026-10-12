@@ -41,7 +41,7 @@ qualification are tracked separately from local PostgreSQL fault tests in M1_TES
 
 | Item | State | Consequence / next verification |
 | --- | --- | --- |
-| Docker services locally | BLOCKED locally: Docker socket absent | Compose files validate; hosted CI must exercise image, migration and actual ASGI startup |
+| Docker services locally | BLOCKED locally: Docker socket absent; hosted smoke PASS | Hosted CI executed image, migrations, capture/parser/seal and actual ASGI startup; local Docker remains unavailable |
 | WAL/PITR and deletion-aware backup retention | BLOCKED / not configured | Logical restore passes; no production RPO/RTO or acknowledged-capture loss qualification |
 | Approved-origin live TLS/DNS/egress drill | BLOCKED: no confirmed publisher permissions | Network controls tested with synthetic resolvers/sockets only; keep live disabled |
 | Hard parser CPU/address-space sandbox and process quotas | NOT IMPLEMENTED | In-process structural/byte/time checks pass; isolated hostile-process exhaustion qualification remains |

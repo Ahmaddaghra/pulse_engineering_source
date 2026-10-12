@@ -7,7 +7,8 @@ inference from these tests.
 ## Immutable tested revision and environment
 
 Executed source revision: **`3c55202bcc41b3e8ebf7b8e4ed6adb8f3a521851`**.
-The following documentation commit changes handoff/evidence text only. Branch:
+Application tests use that source; later CI-only changes isolate disposable Compose volumes
+and install matching restore clients. The evidence documentation changes no application code. Branch:
 `feat/m1-durable-ingestion`, based on specification branch commit
 `d7d4eceb8ff0fa940370c8847ba6813f5b0af39f`.
 
@@ -68,7 +69,27 @@ bash -n scripts/compose_smoke.sh
 Local Docker image/service execution: **BLOCKED**. `docker info` failed because
 `/Users/ahmad/.docker/run/docker.sock` did not exist. Config validation is not runtime evidence.
 The GitHub Actions workflow is configured to build/run the Compose stack and test actual API
-startup; its separate result must be inspected in the draft PR before claiming remote PASS.
+startup; the executed remote PASS is recorded below.
+
+## Hosted CI and Docker runtime evidence
+
+GitHub Actions run [38292026796](https://github.com/Ahmaddaghra/pulse_engineering_source/actions/runs/38292026796)
+**PASS** on runtime/CI revision **`f385cb3c7e50416f08722e4f963943feb44b90c8`**.
+Its JUnit artifact reports **188 tests, 0 failures, 0 errors, 0 skipped**. Matching PostgreSQL 17
+clients are installed using the [official PostgreSQL Ubuntu repository instructions](https://www.postgresql.org/download/linux/ubuntu/);
+CI explicitly rejects any skipped fault scenario. An earlier run had 187 pass/1 BLOCKED restore
+skip; that environment gap was resolved and is not counted as the final result.
+
+Hosted checks passed Ruff/format/mypy, empty-database migrations and schema drift, the full test
+suite including logical restore, and the fixture CLI flow. The Compose smoke built the Docker
+image, initialized a separate PostgreSQL/object-volume project, applied head0004, captured and
+parsed a fixture, sealed a snapshot, and started the configured ASGI server. Actual container
+readiness returned `ready/reachable/0004`; actual observations asserted `OBSERVED_ONLY`,
+`AVAILABLE`, one stored record and receipt/extraction provenance: **Compose offline API smoke PASS**.
+
+Docker runtime is therefore **test-passed on the hosted Linux runner**. The local Mac daemon
+remains unavailable. This is a software smoke, not sustained production qualification. Disposable
+CI volumes use project `pulse-m1-ci-smoke` so cleanup cannot erase development project volumes.
 
 ## Fresh database and actual server smoke
 
@@ -125,8 +146,8 @@ not an external publisher connection.
 
 ## Explicitly blocked or unqualified scenarios
 
-- **BLOCKED — local Docker runtime**: no running Docker daemon/socket. Native PostgreSQL/service
-  verification is separate; hosted Compose smoke is required before Docker runtime PASS.
+- **BLOCKED locally — Docker daemon**: no running local socket. Hosted Linux Docker/Compose
+  runtime passed; no local Docker success is asserted.
 - **BLOCKED — WAL/PITR restore**: no WAL archive, recovery target or production backup/deletion
   policy configured. A logical dump/restore does not prove PITR or an acknowledged-capture RPO.
 - **BLOCKED — approved-origin live TLS/DNS/egress qualification**: no confirmed publisher/feed
@@ -143,6 +164,7 @@ not an external publisher connection.
   behavior; full v0.2 research/editorial design is broader and remains gated.
 - **Code-complete for the offline path**: durable attempt → policy-gated fixture → permitted object
   → receipt/cache/outbox → fenced/idempotent revisions → witnessed observed API → immutable seal.
-- **Test-passed**: the 188-case final suite and commands above passed on the named source revision.
+- **Test-passed**: 188/0/0 locally and 188/0/0 in hosted CI, plus real Docker/Compose/server smoke
+  on the named immutable source revisions.
 - **Operationally-qualified**: **NO**. M1's whole Definition of Done is **not declared complete**.
   G0 rights and G1 operational release remain HOLD until their independent evidence exists.
