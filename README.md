@@ -1,4 +1,8 @@
-# PULSE Engineering Blueprint (review source)
+# PULSE Engineering Blueprint
+
+The current engineering specification is [v0.2](docs/v0.2/README.md), with its [acceptance review](docs/v0.2/ACCEPTANCE_REVIEW.md) and [unresolved assumptions](docs/v0.2/ASSUMPTIONS.md). It supersedes v0.1 for planning after PR #1 specification acceptance. Implementation, source qualification and forecasting remain gated; forecasting is HOLD.
+
+## Historical v0.1 review source
 
 This folder accompanies `PULSE_Software_Engineering_Blueprint_v0.1.pdf`.
 
