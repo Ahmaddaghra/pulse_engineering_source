@@ -26,7 +26,11 @@ flowchart TB
  DB --> Snapshot[Consistent snapshot manifest builder]
  Snapshot --> Forecast[Research-only prediction worker]
  Forecast --> DB
+ DB --> Reconciler[Receipt / object / deletion reconciler]
+ Object --> Reconciler
+ Reconciler --> DB
  DB --> Auditor[Independent replay / retention / gap auditor]
+ Object --> Auditor
  API --> Audit[Read-only evidence audit view]
  classDef blocked fill:#eee,stroke:#555
 ```
@@ -36,10 +40,10 @@ flowchart TB
 ## Transaction boundary contract
 
 1. **Preflight**: approve origin/permission *before* any network request; persist a due `fetch_attempt` and stable `fetch_id`. Permission is checked again before accepting durable content.
-2. **Fetch**: use bounded network/parse budgets. Store the allowed raw representation or policy-permitted metadata envelope as a content-addressed, policy-scoped, immutable object. An unapproved payload must not remain in quarantine.
-3. **Receipt transaction**: in one PostgreSQL transaction, commit `fetch_receipt`, artifact reference, the origin cache/validator update (only if recoverable), and a `parse_requested` outbox entry. ACK only after this transaction commits. A prior object-only write is *orphaned*, not acknowledged capture.
+2. **Fetch**: use bounded network/parse budgets. Recheck current permission after the response and before any object persistence. Store the allowed raw representation or policy-permitted metadata envelope as a content-addressed, policy-scoped, immutable object. An unapproved payload must not remain in quarantine. A valid 304 references the existing permitted, recoverable object; it creates a receipt without inventing new publication occurrences.
+3. **Receipt transaction**: in one PostgreSQL transaction, verify the current lease/fence and serialize the approval-version check with revocation; commit `fetch_receipt`, artifact reference, the origin cache/validator update (only if recoverable), and a `parse_requested` outbox entry. ACK only after this transaction commits. If permission changed during the object put, reject acceptance and erase the now-disallowed object under the deletion contract. A prior object-only write is *orphaned*, not acknowledged capture.
 4. **Revision transaction**: parse workers perform idempotent receipt processing. In one transaction, commit content revision, origin/occurrence provenance and `event_resolution_requested` outbox event.
-5. **Outbox**: relay delivers at least once; consumers deduplicate by `(consumer, logical_event_id, version)`. A lease/fence is necessary to prevent expired worker effects. No exactly-once network delivery claim.
+5. **Outbox**: relay delivers at least once; consumers deduplicate by `(consumer, logical_event_id, version)`. Validate the current lease/fence inside the same transaction as every worker's effects and deduplication record; a check made only when claiming work is insufficient. No exactly-once network delivery claim.
 6. **Reconcile**: scan unfinished attempts, orphaned objects, missing referenced objects, undelivered outbox work, and invalidated/deleted records. Audit all exception intervals.
 
 ```mermaid
@@ -50,25 +54,41 @@ sequenceDiagram
   participant O as Object store
   participant D as PostgreSQL
   participant R as Outbox relay
-  participant W as Parser / event worker
+  participant W as Parser /<br/>event worker
   S->>D: Insert due attempt + stable fetch_id
   C->>D: Claim attempt (lease/fence)
   C->>P: Check permission & safe origin
   P-->>C: Allow / block
   alt Approved
     C->>C: HTTP fetch bounded by shared origin budget
-    C->>O: Put immutable permitted envelope (conditional)
-    O-->>C: Object key, checksum
-    C->>D: BEGIN; receipt + object reference + cache validators + parse outbox; COMMIT
-    Note over C,D: Ack only on committed recoverable receipt
-    R->>D: Claim outbox with fencing
-    R->>W: Deliver event (at least once)
-    W->>D: BEGIN; revision + downstream outbox; COMMIT
-    W-->>R: Ack after commit
+    C->>P: Recheck rights after fetch, before persistence
+    alt Still permitted
+      alt New permitted representation
+        C->>O: Put immutable permitted envelope (conditional)
+        O-->>C: Object key, checksum
+      else 304 with valid permitted cache
+        C->>O: Verify referenced cached object is recoverable
+        O-->>C: Existing object key, checksum
+      end
+      C->>D: Transaction: validate fence and serialize rights<br/>receipt, object reference, cache validators, parse outbox
+      D-->>C: Committed receipt or rejected acceptance
+      alt Receipt committed
+        Note over C,D: Ack only on committed recoverable receipt
+        R->>D: Claim outbox with fencing
+        R->>W: Deliver event (at least once)
+        W->>D: Transaction: validate fence and dedup<br/>revision and downstream outbox, commit
+        W-->>R: Ack after commit
+      else Acceptance rejected
+        C->>O: Erase disallowed orphan or reconcile permitted orphan
+        C->>D: Persist policy-safe failure
+      end
+    else Revoked during fetch
+      C->>D: Persist policy-safe failure, discard response
+    end
   else Blocked/revoked
     C->>D: Persist policy-safe failure and stop
   end
-  Note over O,D: Reconciler detects orphaned objects and missing references
+  Note over O,D: Reconciler detects orphaned objects<br/>and missing references
 ```
 
 ## Failure matrix and recovery invariants

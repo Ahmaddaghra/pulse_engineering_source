@@ -1,9 +1,12 @@
-# PULSE Engineering Blueprint v0.2 — Review Candidate
+# PULSE Engineering Blueprint v0.2
 
-**Status:** DESIGN REVISION / NOT IMPLEMENTED / Forecasting HOLD  
-**Date:** 2026-10-12  
-**Supersedes for planning:** v0.1, without modifying or erasing its historical source files.  
-**Change authority:** Draft PR; no implied approval, data rights, forecast lift, newsroom adoption or production readiness.
+**Status:** ENGINEERING SPECIFICATION / NOT IMPLEMENTED / Forecasting HOLD
+
+**Date:** 2026-10-12
+
+**Supersedes for planning:** v0.1, without modifying or erasing its historical source files.
+
+**Change authority:** PR #1, subject to the specification acceptance recorded in [ACCEPTANCE_REVIEW.md](ACCEPTANCE_REVIEW.md). Operational/data/research gates require their own evidence and signoffs.
 
 ## Executive decision
 
@@ -25,6 +28,8 @@ PULSE is first an **evidence-backed editorial decision support service**, with a
 | [FORECASTING_PROTOCOL.md](FORECASTING_PROTOCOL.md) | Eligibility, true coverage growth, baselines, temporal evaluation, inference |
 | [EDITORIAL_WORKFLOW.md](EDITORIAL_WORKFLOW.md) | User decisions, distinct observed/forecast states, product benchmark and APIs |
 | [DELIVERY_AND_VERIFICATION.md](DELIVERY_AND_VERIFICATION.md) | ADRs, risk ownership, gate acceptance, test matrix, staged work plan |
+| [ASSUMPTIONS.md](ASSUMPTIONS.md) | Unresolved premises, responsible roles, evidence needed and blocking gates |
+| [ACCEPTANCE_REVIEW.md](ACCEPTANCE_REVIEW.md) | Specification review scope, corrections, checks and acceptance decision |
 
 These are **design specifications**, not implemented artifacts. Diagrams are Mermaid source embedded in the Markdown files, rendered by GitHub. Their identities and contracts are normative when marked MUST; examples are not operational evidence.
 
@@ -40,12 +45,12 @@ These are **design specifications**, not implemented artifacts. Diagrams are Mer
 
 G0 source authorization/owner diversity → G1 durable capture and reproducible temporal state → G2 adjudicated Arabic event identity → G3 observed editorial workflow benefit → G4 feasible frozen label & development baselines → G5 prospective sealed forecast and incremental editorial utility.
 
-A gate can be **GO / HOLD / KILL** independently. G3 does not imply G5. If G3 wins and G5 fails, retain an honestly named monitoring product. If source rights are blocked, stop network capture and use lawful fixtures for software checks, never invented measurements.
+Each gate has its own **GO / HOLD / KILL** verdict; qualifying a downstream live capability also requires its prerequisite gates. G3 does not imply G5. If G3 wins and G5 fails, retain an honestly named monitoring product. If source rights are blocked, stop network capture and use lawful fixtures for software checks, never invented measurements. Gate numbering in this v0.2 package supersedes v0.1; do not mix the older G3-label/G4-forecast/G5-utility names with these gates.
 
 ## Review acceptance checklist
 
 - Every review point is traceable, with unverified premises explicitly noted.
-- All diagrams show the outbox, object-store reconciliation, versions and appropriate failure states.
+- The architecture/sequence diagrams cover outbox, object-store reconciliation and failure boundaries; the ER, research and editorial diagrams agree with their corresponding version and state contracts.
 - Freshness is measured end-to-end as publisher-to-editor delay, not scheduler punctuality only.
 - Every submitted forecast has a frozen candidate population and content/feature/transform identity.
 - Coverage-surges require **growth**, not merely future volume; missingness is never a negative label.
@@ -55,6 +60,6 @@ A gate can be **GO / HOLD / KILL** independently. G3 does not imply G5. If G3 wi
 
 ## Status and handoff
 
-This PR is for architecture/ML/product review only. No runtime source integrations, database migrations, models, scheduler, customer interviews or deployments were created. Exact numerical release thresholds must be preregistered **after development feasibility measurements**, before final evaluation, not invented in this document.
+This package is the engineering planning authority after specification acceptance. No runtime source integrations, database migrations, models, scheduler, customer interviews or deployments were created. Exact numerical release thresholds must be preregistered **after development feasibility measurements**, before final evaluation, not invented in this document. All operational gates remain unqualified; unresolved assumptions and required specialist signoffs are recorded in ASSUMPTIONS.md.
 
 **Original baseline:** [PULSE_BLUEPRINT.md](../../PULSE_BLUEPRINT.md).

@@ -17,13 +17,19 @@ stateDiagram-v2
  Inspecting --> Verify: request verification
  Inspecting --> Assigned: assign story
  Inspecting --> Watching: defer or watch
+ Inspecting --> Snoozed: snooze until a recorded deadline
  Inspecting --> Dismissed: not relevant
  Inspecting --> AlreadyCovered: already assigned/covered
- Watching --> New: material new development; rate limit applied
+ Watching --> New: material new development with rate limit applied
+ Watching --> Snoozed: snooze
+ Snoozed --> Watching: deadline expires
+ Snoozed --> New: material change + manual policy permits
  Verify --> Assigned: evidence resolved
  Verify --> Watching: insufficient evidence
  Assigned --> Completed: newsroom marks complete
  Dismissed --> New: material change + manual policy permits
+ AlreadyCovered --> New: distinct new development + manual policy permits
+ Completed --> New: distinct new development + manual policy permits
 ```
 
 **First view:** what changed / when first observed / desk relevance / current sources and owner distribution / original reporting diversity where known / conflicting evidence / whether already assigned / source health. **Evidence view:** permitted excerpts or metadata only, links (when allowed), chronology, aliases and syndication graph, disputed/unknown claims and rights attribution. **Action view:** verify, assign, watch, snooze, dismiss, already covered; all actions have actor/time, idempotent requests, shared tenancy permissions.
@@ -32,29 +38,35 @@ Use **up to five**, including zero when no eligible material changes, and never 
 
 ## Data-quality/API states
 
+Operating `mode` and `evidence_status` are independent fields. `mode` is `OBSERVED_ONLY` or `FORECAST_QUALIFIED`; `evidence_status` is `AVAILABLE`, `NO_QUALIFIED_CANDIDATES`, `PARTIALLY_DEGRADED` or `EVIDENCE_UNAVAILABLE`. `panel_health` reports source health separately. Apply evidence status in this order: no usable permitted evidence → EVIDENCE_UNAVAILABLE; any relevant gap with usable evidence → PARTIALLY_DEGRADED; complete healthy evidence with no eligible material developments → NO_QUALIFIED_CANDIDATES; otherwise AVAILABLE. A known positive observation may remain visible during partial degradation; it does not establish the absence of other news.
+
 | State | When | Editor sees |
 |---|---|---|
-| `OBSERVED_ONLY` | Permitted observations exist; forecast not released | Dated evidence cards, explicit monitoring scope |
+| `AVAILABLE` + `OBSERVED_ONLY` | Permitted observations exist; forecast not released | Dated evidence cards, explicit monitoring scope |
 | `NO_QUALIFIED_CANDIDATES` | Healthy authorized panel; no event meets editorial criteria | True empty briefing with last successful checkpoint |
 | `PARTIALLY_DEGRADED` | Some source/processing gaps, permitted observations remain | Evidence from qualified sources plus conspicuous gap indicators; no unsupported forecast |
 | `EVIDENCE_UNAVAILABLE` | No lawful/usable evidence for request or revoked panel | No candidates, explicit cause and temporal scope |
-| `FORECAST_QUALIFIED` | Forecast released after G5 plus current health checks | Evidence cards with calibrated forecast and model/date context |
+| `AVAILABLE` + `FORECAST_QUALIFIED` | Forecast released after G5 plus current health checks | Evidence cards with calibrated forecast and model/date context |
 
 Never interpret `candidates:[]` alone as no news. Forecast null is a genuine state, not 0% probability.
+
+For NO_QUALIFIED_CANDIDATES, require healthy/complete authorized evidence and a last successful checkpoint. EVIDENCE_UNAVAILABLE returns an empty candidate list with a reason and affected interval. PARTIALLY_DEGRADED includes explicit gap records, even when the qualified subset yields zero candidates. Only AVAILABLE with a released, currently usable frozen forecast may set mode=FORECAST_QUALIFIED and forecasts_available=true. All other combinations use OBSERVED_ONLY, forecasts_available=false and absent/null probability fields. Research scores remain in the restricted audit lane until G5; public observed endpoints must not expose them. Tenant/rights filtering is applied before determining status for the request.
 
 ### Illustrative contract — not a runtime result
 
 ```json
 {
   "mode": "OBSERVED_ONLY",
+  "evidence_status": "NO_QUALIFIED_CANDIDATES",
   "as_of": "2026-10-12T15:00:00Z",
   "panel_version": "illustrative-panel-v1",
   "coverage_scope": "authorized_enrolled_publishers_only",
-  "panel_health": "PARTIALLY_DEGRADED",
+  "panel_health": "OK",
   "forecasts_available": false,
   "candidates": [],
-  "reason": "example_schema_only",
-  "observation_age_seconds": null,
+  "reason": "illustrative_no_material_development",
+  "last_successful_checkpoint_at": "2026-10-12T15:00:00Z",
+  "observation_age_seconds": 0,
   "source_gaps": []
 }
 ```

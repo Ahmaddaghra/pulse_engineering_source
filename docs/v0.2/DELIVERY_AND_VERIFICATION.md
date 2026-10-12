@@ -12,9 +12,9 @@ This work is **documentation only**. The following are release gates, not assert
 | ADR-004 | REVISE publication occurrence / content family / event/development identities and append-only CAS lineage | Accepted design |
 | ADR-005 | REVISE target/baselines on chronological development only; no final holdout opening for candidate selection | Accepted design |
 | ADR-006 | KEEP honest OBSERVED_ONLY fallback; never conflate no candidates and no available evidence | Accepted design |
-| ADR-007 (new) | Require durable capture high-watermarks, reconcilers, WAL/PITR verified with object versions and deletion logs | Proposed |
-| ADR-008 (new) | Observed news-desk lane precedes optional predictive release, separate from 6-hour cutoff | Proposed |
-| ADR-009 (new) | Unusual panel coverage GROWTH label requires positive delta and count/breadth floors; thresholds development-frozen | Proposed |
+| ADR-007 (new) | Require durable capture high-watermarks, reconcilers, WAL/PITR verified with object versions and deletion logs | Accepted design on specification acceptance |
+| ADR-008 (new) | Observed news-desk lane precedes optional predictive release, separate from 6-hour cutoff | Accepted design on specification acceptance |
+| ADR-009 (new) | Unusual panel coverage GROWTH label requires positive delta and count/breadth floors; thresholds development-frozen | Accepted design on specification acceptance |
 
 ## Gated work breakdown (estimates conditional on evidence)
 
@@ -48,6 +48,10 @@ This work is **documentation only**. The following are release gates, not assert
 | T-ML-02 | holdout opened for selection, immature label used in fitting | evaluation must fail closed |
 | T-ML-03 | outage recovery burst and incomplete panel | no false surge labels |
 | T-PROD-01 | source degraded, no observations, no suitable candidates, repeated alert | distinct API states and bounded repeat burden |
+| T-TIME-05 | build/issuance after logical cutoff; later model/alias artifact | exclude later state, report actual lead time and missed/delayed cutoffs |
+| T-TIME-06 | revocation/deletion after issued manifest | append invalidation without rewriting hash; erase prohibited bytes and mark replay unavailable |
+| T-ML-04 | zero/negative delta threshold; equality/window boundaries; repeated occurrence | reject invalid thresholds; count each occurrence once; score only complete windows |
+| T-PROD-02 | mode/health/evidence combinations; snooze expiry and new development after coverage | deterministic status precedence, forecast fields gated and explicit action transitions |
 
 ## Stage deliverables / owner responsibilities
 
@@ -57,7 +61,7 @@ Recommended repository implementation packages once gated: `contracts/`, `apps/a
 
 ## Review/merge rules
 
-- Require review of rights and retention contracts by qualified data/legal reviewer; audit of leakage/target by ML reviewer; confirmation of editorial decision requirement by domain reviewer.
+- Specification acceptance authorizes this documentation baseline only. Before their respective live/research gates, require review of rights and retention contracts by qualified data/legal reviewer (G0), audit of leakage/target by ML reviewer (G4/G5), and confirmation of editorial decision requirement by domain reviewer (G3). These unresolved signoffs are tracked in ASSUMPTIONS.md; a documentation merge grants none of them.
 - CI when implemented: Markdown link check, Mermaid syntax, schema validation, static checks, migration smoke, offline failure/temporal tests. Do not mark tests green without executing them.
 - Avoid claiming “exactly once” across DB/object storage or external delivery; use idempotent effects, reconciliation, and explicit invalidation instead.
-- `main` and the v0.1 files remain unchanged until human PR approval; no automatic merge. 
+- Merge PR #1 only after its specification checks pass under the project owner's explicit Step 1 authorization. Keep v0.1 source/diagram files as the historical baseline, and point the root README at the accepted v0.2 package. Do not enable unattended auto-merge or infer runtime release authorization.

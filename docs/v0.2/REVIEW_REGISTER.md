@@ -23,12 +23,12 @@ This is an *engineering change register*, not a claim that findings are fixed in
 | R3-03 | Product / high | Three feeds/owner panel not robust; latency and rights uncertain | ACCEPT → DATA_CONTRACTS and DELIVERY: enrollment and panel resilience | Permission, ownership, latency, outage study |
 | R3-04 | Product / high | Six-hour cutoffs too slow for live desk | ACCEPT → ARCHITECTURE and EDITORIAL_WORKFLOW: observed change stream independent from forecast cadence | Alert lifecycle tests and timeliness measurement |
 | R3-05 | Product / high | Top-five reading UI lacks workflow actions | ACCEPT → EDITORIAL_WORKFLOW: verification, assignment, snooze, dismissal, shared status | Task completion and repeat alert burden |
-| R3-06 | Product / high | Incomplete panel: ambiguous empty output | ACCEPT → EDITORIAL_WORKFLOW: distinct NOT_AVAILABLE / NO_QUALIFIED_CANDIDATES / OBSERVED_ONLY | API state-machine contract tests |
+| R3-06 | Product / high | Incomplete panel: ambiguous empty output | ACCEPT → EDITORIAL_WORKFLOW: distinct EVIDENCE_UNAVAILABLE / NO_QUALIFIED_CANDIDATES / PARTIALLY_DEGRADED, separate operating mode | API state-machine contract tests |
 | R3-07 | Product / high | Seven days qualifies smoke, not sustained operational value | ACCEPT → DELIVERY: smoke gate separate from reliability evidence | Extended prospective health/latency evidence |
 
 ## Explicit disagreements and decisions
 
-1. **Original ADR-005 vs Review 2:** Reject use of the final holdout to choose baselines, target, preprocessing, M3 or tuning. Use only chronological development selection; reserve the final test once, and acquire a new one if compromised.
+1. **ADR-005 and v0.1 §7.2 vs Review 2:** Preserve the sealed-evaluation requirement and clarify the ambiguous “best baseline” wording. v0.1 does not explicitly authorize final-holdout tuning. Reject any interpretation that uses the final holdout to choose baselines, target, preprocessing, M3 or tuning. Use only chronological development selection; reserve the final test once, and acquire a new one if compromised.
 2. **Original surge label:** Reject high future volume as synonymous with surge. Rename a volume-only analysis HIGH_FUTURE_COVERAGE; use growth for the primary candidate target. No numeric thresholds endorsed until feasible on observed development data.
 3. **Three owners:** Retain as *minimum G0 smoke eligibility*, not evidence of representativeness, independent reporting, uptime or useful newsroom latency. Enlarge or reject the panel on evidence.
 4. **Database architecture:** Keep ADR-001. Broker adoption is a measurement-driven decision. A modular monolith can have separate deployed workers and a DB outbox.
@@ -43,3 +43,5 @@ This is an *engineering change register*, not a claim that findings are fixed in
 - Baseline source: v0.1 Sections 1–13 and diagrams 01–09, in repository root.
 
 The review texts were not added verbatim to this repository; this register records their technical findings and our dispositions. References in v0.1 remain supporting materials rather than new measurements.
+
+The line counts and completeness of this source mapping remain owner-reported until the original reviews are available for comparison (A10 in [ASSUMPTIONS.md](ASSUMPTIONS.md)). The finalization review checks the repository specification directly; its corrections and evidence are in [ACCEPTANCE_REVIEW.md](ACCEPTANCE_REVIEW.md).
