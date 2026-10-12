@@ -45,7 +45,11 @@ class Crash(BaseException):
 
 
 def _source(
-    engine: Engine, *, publisher: str = "fixture-publisher", validity_seconds: int = 86400
+    engine: Engine,
+    *,
+    publisher: str = "fixture-publisher",
+    validity_seconds: int = 86400,
+    retention_seconds: int = 86400,
 ) -> tuple[str, str]:
     source_id, policy_id = str(uuid4()), str(uuid4())
     with transaction(engine) as session:
@@ -78,7 +82,7 @@ def _source(
                 derived_allowed=True,
                 link_display_allowed=True,
                 allowed_fields=["guid", "url", "title", "published_at", "published_precision"],
-                retention_seconds=86400,
+                retention_seconds=retention_seconds,
                 rate_scope=f"origin-{source_id}",
             )
         )
@@ -100,6 +104,7 @@ def _capture(
     status: int = 200,
     artifact_key: str | None = None,
     raw: bytes | None = None,
+    artifact_retention_seconds: int = 86400,
 ) -> tuple[str, str]:
     source_id, policy_id = source
     fetch_id, receipt_id, event_id = str(uuid4()), str(uuid4()), str(uuid4())
@@ -138,7 +143,7 @@ def _capture(
                     sha256=hashlib.sha256(data).hexdigest(),
                     size=len(data),
                     created_at=now,
-                    expires_at=now + timedelta(days=1),
+                    expires_at=now + timedelta(seconds=artifact_retention_seconds),
                 )
             )
         session.flush()
@@ -559,7 +564,7 @@ def test_url_only_timestamp_correction_stays_explicitly_ambiguous(engine, store)
         assert session.scalar(select(Occurrence)).identity_confidence == "url_only_ambiguous"
 
 
-def _legacy_v1(engine, store, source, item):
+def _legacy_v1(engine, store, source, item, *, artifact_retention_seconds=86400):
     """Seed exact old committed data without executing the corrected resolver."""
     from pulse.availability import mark_available
 
@@ -570,7 +575,9 @@ def _legacy_v1(engine, store, source, item):
     key = hashlib.sha256(
         json.dumps(identity, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()
-    receipt_id, event_id = _capture(engine, store, source, [item])
+    receipt_id, event_id = _capture(
+        engine, store, source, [item], artifact_retention_seconds=artifact_retention_seconds
+    )
     with transaction(engine) as session:
         now = db_now(session)
         policy = session.get(Policy, source[1])
@@ -729,3 +736,97 @@ def test_permission_expiry_during_identity_resolution_rolls_back_derived_content
         assert session.scalar(
             select(HealthInterval).where(HealthInterval.state == "RIGHTS_BLOCKED")
         )
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("expiry", [None, "policy", "artifact", "receipt"])
+def test_cross_source_legacy_permission_is_rechecked_before_effect_commit(
+    engine, store, monkeypatch, expiry
+):
+    import pulse.worker as worker
+    from pulse.models import Audit
+
+    incoming = _source(engine)
+    legacy = _source(
+        engine,
+        validity_seconds=2 if expiry == "policy" else 86400,
+        retention_seconds=2 if expiry == "receipt" else 86400,
+    )
+    old_ids = _legacy_v1(
+        engine,
+        store,
+        legacy,
+        _item(),
+        artifact_retention_seconds=2 if expiry == "artifact" else 86400,
+    )
+    with transaction(engine) as session:
+        old_observation = session.get(Observation, old_ids[2])
+        old_receipt = session.get(Receipt, old_observation.receipt_id)
+        old_artifact = session.get(Artifact, old_receipt.artifact_key)
+        old_policy = session.get(Policy, legacy[1])
+        deadline = min(
+            old_policy.expires_at,
+            old_artifact.expires_at,
+            old_receipt.received_at + timedelta(seconds=old_policy.retention_seconds),
+        )
+        assert deadline > db_now(session)
+    receipt_id, event_id = _capture(
+        engine, store, incoming, [_item(published="2026-10-12T11:50+03:00")]
+    )
+    claimed = claim_parse(engine)
+    assert claimed and claimed[0] == event_id
+
+    original_require = worker.require_policy
+    permission_reads = 0
+
+    def cross_deadline_after_permission_read(session, source_id, policy_id):
+        nonlocal permission_reads
+        policy = original_require(session, source_id, policy_id)
+        permission_reads += 1
+        if permission_reads == 2:
+            # The legacy witness expires while the final permission read returns.
+            # A clock tick taken before this call would incorrectly permit commit.
+            if expiry:
+                time.sleep(max(0, (deadline - datetime.now(UTC)).total_seconds()) + 0.05)
+            else:
+                time.sleep(0.05)
+        return policy
+
+    monkeypatch.setattr(worker, "require_policy", cross_deadline_after_permission_read)
+    process_parse(engine, store, *claimed)
+    assert permission_reads == 2
+    assert _counts(engine) == ((1, 1, 1, 1) if expiry else (1, 2, 2, 2))
+    with transaction(engine) as session:
+        now = db_now(session)
+        # The incoming permission and object remain valid in every expiry case.
+        assert session.get(Policy, incoming[1]).expires_at > now
+        receipt = session.get(Receipt, receipt_id)
+        assert session.get(Artifact, receipt.artifact_key).expires_at > now
+        assert session.get(Occurrence, old_ids[0]).identity_version == "occurrence-v1"
+        assert session.get(Revision, old_ids[1]).normalization_version == "normalization-v1"
+        assert session.get(Observation, old_ids[2]).revision_id == old_ids[1]
+        event = session.get(Outbox, event_id)
+        continued = session.scalar(
+            select(func.count())
+            .select_from(Audit)
+            .where(Audit.code == "IDENTITY_LEGACY_CONTINUED_V2")
+        )
+        witness = session.scalar(
+            select(Availability).where(
+                Availability.kind == "parsed_receipt", Availability.entity_id == receipt_id
+            )
+        )
+        if expiry:
+            assert event.state == "DEAD" and event.error_code == "derived_policy_blocked"
+            assert continued == 0 and witness is None
+            assert session.get(Consumption, ("metadata-parser", event_id, "parser-v1")) is None
+            assert session.scalar(
+                select(HealthInterval).where(HealthInterval.state == "RIGHTS_BLOCKED")
+            )
+        else:
+            assert event.state == "DONE" and continued == 1 and witness is not None
+            observation = session.scalar(
+                select(Observation).where(Observation.receipt_id == receipt_id)
+            )
+            assert observation.occurrence_id == old_ids[0]
+    assert not run_parser_once(engine, store)

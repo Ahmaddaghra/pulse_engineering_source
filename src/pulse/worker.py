@@ -143,6 +143,7 @@ def _resolve_occurrence(
     identity: str,
     confidence: str,
     now: datetime,
+    legacy_deadlines: list[datetime],
 ) -> Occurrence:
     occurrence = session.scalar(
         select(Occurrence).where(
@@ -156,8 +157,15 @@ def _resolve_occurrence(
     # Do not inflate counts at upgrade by merely putting a v2 key beside a v1 key.
     # Read only retained metadata with currently active, derived-use permission.
     legacy_policy = aliased(Policy)
+    retained_until = Receipt.received_at + func.make_interval(
+        0, 0, 0, 0, 0, 0, legacy_policy.retention_seconds
+    )
     rows = session.execute(
-        select(Occurrence, Revision.fields)
+        select(
+            Occurrence,
+            Revision.fields,
+            func.least(legacy_policy.expires_at, Artifact.expires_at, retained_until),
+        )
         .join(Revision, Revision.occurrence_id == Occurrence.id)
         .join(Observation, Observation.revision_id == Revision.id)
         .join(Receipt, Receipt.id == Observation.receipt_id)
@@ -174,13 +182,12 @@ def _resolve_occurrence(
             legacy_policy.effective_from <= now,
             legacy_policy.expires_at > now,
             Artifact.expires_at > now,
-            Receipt.received_at
-            + func.make_interval(0, 0, 0, 0, 0, 0, legacy_policy.retention_seconds)
-            > now,
+            retained_until > now,
         )
     )
     candidates: dict[str, Occurrence] = {}
-    matching_url: set[str] = set()
+    candidate_deadlines: dict[str, datetime] = {}
+    matching_url: dict[str, datetime] = {}
     for row in rows:
         legacy = cast(Occurrence, row[0])
         fields = cast(dict[str, str], row[1])
@@ -191,14 +198,21 @@ def _resolve_occurrence(
         if legacy_key != identity:
             continue
         candidates[legacy.id] = legacy
+        deadline = cast(datetime, row[2])
+        candidate_deadlines[legacy.id] = max(candidate_deadlines.get(legacy.id, deadline), deadline)
         if item.get("url") and fields.get("url"):
             try:
                 if normalize_url(item["url"]) == normalize_url(fields["url"]):
-                    matching_url.add(legacy.id)
+                    matching_url[legacy.id] = max(matching_url.get(legacy.id, deadline), deadline)
             except InvalidEnvelope:
                 pass
     if matching_url:
         candidates = {key: value for key, value in candidates.items() if key in matching_url}
+        candidate_deadlines = matching_url
+    # One retained witness per candidate suffices. Policy heads and permission
+    # fields cannot change while evidence_lock is held, but these deadlines can
+    # pass during parsing. Include ambiguous candidates whose audit is persisted.
+    legacy_deadlines.extend(candidate_deadlines.values())
     if len(candidates) > 1:
         for candidate in sorted(candidates):
             session.add(
@@ -326,6 +340,7 @@ def _observe(
     ordinal: int,
     value: Any,
     now: datetime,
+    legacy_deadlines: list[datetime],
 ) -> None:
     if (
         not isinstance(value, dict)
@@ -345,7 +360,7 @@ def _observe(
     timestamp, precision = published_time(item.get("published_at"))
     identity, confidence = occurrence_identity(item, timestamp, precision)
     occurrence = _resolve_occurrence(
-        session, receipt, policy, ordinal, item, identity, confidence, now
+        session, receipt, policy, ordinal, item, identity, confidence, now, legacy_deadlines
     )
     fingerprint = hashlib.sha256(_json_bytes(item)).hexdigest()
     revision = session.scalar(
@@ -452,9 +467,12 @@ def process_parse(
                     raise InvalidEnvelope("artifact_unavailable_or_expired")
                 items = _envelope(store, artifact, policy)
                 rejected: dict[str, int] = {}
+                legacy_deadlines: list[datetime] = []
                 for ordinal, item in enumerate(items):
                     try:
-                        _observe(session, receipt, source, policy, ordinal, item, now)
+                        _observe(
+                            session, receipt, source, policy, ordinal, item, now, legacy_deadlines
+                        )
                     except InvalidEnvelope as exc:
                         code = str(exc)
                         rejected[code] = rejected.get(code, 0) + 1
@@ -486,12 +504,17 @@ def process_parse(
             if fault is not None:
                 fault("before_effect_commit")
             # The lock is held through commit. Recheck after parsing and any blocked waits.
+            if new_effects:
+                policy = require_policy(session, receipt.source_id, receipt.policy_id)
             finished_at = db_now(session)
             _leased(event, fence, finished_at)
             if new_effects:
-                require_policy(session, receipt.source_id, receipt.policy_id)
+                if policy.expires_at <= finished_at:
+                    raise PolicyBlocked("policy expired during processing")
                 if artifact is None or artifact.expires_at <= finished_at:
                     raise PolicyBlocked("artifact retention expired during processing")
+                if any(deadline <= finished_at for deadline in legacy_deadlines):
+                    raise PolicyBlocked("legacy identity permission expired during processing")
     except PolicyBlocked:
         _failure(engine, event_id, fence, "derived_policy_blocked", True)
         return
