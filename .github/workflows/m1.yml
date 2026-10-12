@@ -32,10 +32,23 @@ jobs:
           version: "0.12.13"
           python-version: "3.12"
       - run: uv sync --frozen
+      - name: Install matching PostgreSQL 17 restore clients
+        run: |
+          # Official PostgreSQL apt repository; client-only installation.
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          printf '%s\n' "Types: deb" "URIs: https://apt.postgresql.org/pub/repos/apt" "Suites: ${VERSION_CODENAME}-pgdg" "Components: main" "Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc" | sudo tee /etc/apt/sources.list.d/pgdg.sources
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
       - run: make check
       - run: uv run alembic upgrade head
       - run: uv run alembic check
       - run: uv run pytest -q --junitxml=test-results.xml
+      - name: Require every fault scenario to execute
+        run: |
+          uv run python -c 'import xml.etree.ElementTree as e; r=e.parse("test-results.xml").getroot(); assert sum(int(s.get("skipped", "0")) for s in r.iter("testsuite")) == 0, "Required fault scenarios were BLOCKED/skipped"'
       - run: uv run python -m pulse.cli seed-fixture && uv run python -m pulse.cli schedule && uv run python -m pulse.cli capture-fixture && uv run python -m pulse.cli parse && uv run python -m pulse.cli snapshot
       - run: docker compose config --quiet
       - run: bash scripts/compose_smoke.sh
