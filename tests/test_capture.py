@@ -455,3 +455,41 @@ def test_long_throttle_cannot_fill_backlog_and_starve_new_healthy_source(engine,
         assert session.get(Attempt, healthy_claim[0]).source_id == "healthy"
     assert capture(engine, settings, store, adapter(), *healthy_claim)
     assert count(engine, Attempt) == 2
+
+
+@pytest.mark.parametrize("status", [429, 503])
+@pytest.mark.parametrize("body_kind", ["compressed", "oversized", "invalid-ancillary-header"])
+def test_https_retry_headers_survive_unsafe_error_bodies_and_persist_budget(
+    engine, settings, store, monkeypatch, status, body_kind
+):
+    from tests.test_collection import ENDPOINT, HOST, FakeResponse, mock_transport
+
+    approve(engine, scope="observed_metadata", endpoint=ENDPOINT, allowed_host=HOST, max_bytes=1024)
+    settings.live_enabled = True  # Socket and resolver are replaced before collection.
+    headers = {"Retry-After": "3600"}
+    if body_kind == "compressed":
+        headers["Content-Encoding"] = "gzip"
+    elif body_kind == "oversized":
+        headers["Content-Length"] = "1000000"
+    else:
+        headers["ETag"] = "invalid\r\nheader"
+    response = FakeResponse(
+        status=status, body=b"not-permitted-error-evidence" * 10000, headers=headers
+    )
+    transport = mock_transport(monkeypatch, response)
+    before = datetime.now(UTC)
+    assert capture(engine, settings, store, transport, *claimed(engine, settings)) is None
+    assert response.read_calls == [] and response.closed
+    assert count(engine, Receipt) == count(engine, Artifact) == count(engine, Outbox) == 0
+    assert store.keys() == []
+    with transaction(engine) as session:
+        attempt = session.scalar(select(Attempt))
+        budget = session.get(OriginBudget, attempt.rate_scope)
+        assert attempt.error_code == f"HTTP_{status}" and attempt.state == "PENDING"
+        assert attempt.due_at == budget.next_allowed_at
+        assert (budget.next_allowed_at - before).total_seconds() >= 3600
+        interval = session.scalar(
+            select(HealthInterval).where(HealthInterval.fetch_id == attempt.id)
+        )
+        assert interval.state == "RATE_LIMITED" and interval.reason == f"HTTP_{status}"
+        assert "body" not in interval.details

@@ -177,13 +177,19 @@ class FakeResponse:
         self.status = status
         self.body = body
         self.headers = headers or {}
+        self.read_calls: list[int] = []
+        self.closed = False
 
     def getheader(self, name: str, default: str | None = None) -> str | None:
         return self.headers.get(name, default)
 
     def read1(self, count: int) -> bytes:
+        self.read_calls.append(count)
         result, self.body = self.body[:count], self.body[count:]
         return result
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class FakeConnection:
@@ -288,6 +294,202 @@ def test_conditional_and_retry_responses_preserve_status_headers(
     adapter = mock_transport(monkeypatch, FakeResponse(status, b"", {"Retry-After": "60"}))
     result = collect(adapter, capability=capability())
     assert (result.status, result.body, result.retry_after) == (status, b"", "60")
+
+
+@pytest.mark.parametrize("status", [429, 503])
+@pytest.mark.parametrize(
+    ("headers", "body"),
+    [
+        pytest.param({"Content-Encoding": "gzip"}, b"compressed error", id="compressed"),
+        pytest.param({"Content-Length": "1025"}, b"x" * 1025, id="oversized-length"),
+        pytest.param({}, b"x" * 1025, id="oversized-without-length"),
+        pytest.param({"Content-Length": str(1 << 40)}, b"", id="unbounded-error-stream"),
+    ],
+)
+def test_retry_response_uses_headers_without_reading_error_body(
+    status: int,
+    headers: dict[str, str],
+    body: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnreadableResponse(FakeResponse):
+        def read1(self, count: int) -> bytes:
+            pytest.fail("retry response body must not be read, even for an unbounded stream")
+
+    response = UnreadableResponse(
+        status,
+        body,
+        {**headers, "Retry-After": "3600", "ETag": '"error-v1"', "Last-Modified": "yesterday"},
+    )
+    result = collect(mock_transport(monkeypatch, response), capability=capability())
+    assert (result.status, result.body, result.retry_after) == (status, b"", "3600")
+    assert (result.etag, result.last_modified) == (None, None)
+    assert result.received_at.tzinfo == UTC
+    assert response.closed
+    assert FakeConnection.instances[0].closed
+
+
+@pytest.mark.parametrize("status", [429, 503])
+@pytest.mark.parametrize("header", ["ETag", "Last-Modified"])
+def test_retry_response_ignores_unused_conditional_metadata_headers(
+    status: int,
+    header: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = FakeResponse(
+        status, b"x" * 1025, {header: "value\r\nInjected: value", "Retry-After": "3600"}
+    )
+    result = collect(mock_transport(monkeypatch, response), capability=capability())
+    assert (result.status, result.body, result.retry_after) == (status, b"", "3600")
+    assert (result.etag, result.last_modified) == (None, None)
+    assert not response.read_calls
+    assert response.closed
+    assert FakeConnection.instances[0].closed
+
+
+@pytest.mark.parametrize("status", [429, 503])
+@pytest.mark.parametrize("retry_after", ["3600\r\n", "garbage", "9" * 129, "x" * 1025, "١٢"])
+def test_retry_response_discards_invalid_retry_after_without_losing_status(
+    status: int,
+    retry_after: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = FakeResponse(status, b"x" * 1025, {"Retry-After": retry_after})
+    result = collect(mock_transport(monkeypatch, response), capability=capability())
+    assert (result.status, result.body, result.retry_after) == (status, b"", None)
+    assert not response.read_calls
+    assert response.closed
+    assert FakeConnection.instances[0].closed
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_retry_response_preserves_usable_http_date(
+    status: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retry_after = format_datetime(datetime.now(UTC) + timedelta(hours=1), usegmt=True)
+    response = FakeResponse(status, b"", {"Retry-After": retry_after})
+    result = collect(mock_transport(monkeypatch, response), capability=capability())
+    assert (result.status, result.body, result.retry_after) == (status, b"", retry_after)
+    assert not response.read_calls
+    assert response.closed
+
+
+@pytest.mark.parametrize("header", ["ETag", "Last-Modified", "Retry-After"])
+def test_success_response_still_rejects_invalid_metadata_headers(
+    header: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = FakeResponse(headers={header: "value\r\nInjected: value"})
+    with pytest.raises(CollectionError, match="validator"):
+        collect(mock_transport(monkeypatch, response), capability=capability())
+    assert response.closed
+    assert FakeConnection.instances[0].closed
+
+
+@pytest.mark.parametrize("status", [429, 503])
+@pytest.mark.parametrize(
+    ("response_close_fails", "connection_close_fails"), [(True, False), (False, True), (True, True)]
+)
+@pytest.mark.parametrize("abort_fails", [False, True])
+def test_retry_response_survives_cleanup_failures(
+    status: int,
+    response_close_fails: bool,
+    connection_close_fails: bool,
+    abort_fails: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class FaultResponse(FakeResponse):
+        def close(self) -> None:
+            calls.append("response.close")
+            if response_close_fails:
+                raise OSError("response close failed")
+            super().close()
+
+    class FaultConnection(FakeConnection):
+        def close(self) -> None:
+            calls.append("connection.close")
+            if connection_close_fails:
+                raise OSError("connection close failed")
+            super().close()
+
+        def abort(self) -> None:
+            calls.append("connection.abort")
+            if abort_fails:
+                raise OSError("abort failed")
+
+    response = FaultResponse(status, b"x" * 1025, {"Retry-After": "3600"})
+    adapter = mock_transport(monkeypatch, response)
+    monkeypatch.setattr(collection, "_PinnedHTTPSConnection", FaultConnection)
+    result = collect(adapter, capability=capability())
+    assert (result.status, result.body, result.retry_after) == (status, b"", "3600")
+    assert not response.read_calls
+    assert calls.count("response.close") == calls.count("connection.close") == 1
+    assert calls.count("connection.abort") == response_close_fails + connection_close_fails
+
+
+@pytest.mark.parametrize("failure", ["body_budget", "deadline"])
+def test_cleanup_failures_do_not_replace_collection_errors(
+    failure: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tick = [100.0]
+    calls: list[str] = []
+
+    class FaultResponse(FakeResponse):
+        def close(self) -> None:
+            calls.append("response.close")
+            raise OSError("response close failed")
+
+    class FaultConnection(FakeConnection):
+        def getresponse(self) -> FakeResponse:
+            if failure == "deadline":
+                tick[0] = 102.0
+            return response
+
+        def close(self) -> None:
+            calls.append("connection.close")
+            raise OSError("connection close failed")
+
+        def abort(self) -> None:
+            calls.append("connection.abort")
+            raise OSError("abort failed")
+
+    response = FaultResponse(body=b"x" * 1025)
+    adapter = mock_transport(monkeypatch, response)
+    monkeypatch.setattr(collection.time, "monotonic", lambda: tick[0])
+    monkeypatch.setattr(collection, "_PinnedHTTPSConnection", FaultConnection)
+    with pytest.raises(
+        CollectionError, match="byte budget" if failure == "body_budget" else "deadline"
+    ):
+        collect(adapter, capability=capability())
+    assert calls.count("response.close") == calls.count("connection.close") == 1
+    assert calls.count("connection.abort") == 2
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_retry_response_cannot_bypass_absolute_header_deadline(
+    status: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tick = [100.0]
+    response = FakeResponse(status, b"", {"Retry-After": "3600"})
+    adapter = mock_transport(monkeypatch, response)
+
+    class ExpiredHeaderConnection(FakeConnection):
+        def getresponse(self) -> FakeResponse:
+            tick[0] = 102.0
+            return response
+
+    monkeypatch.setattr(collection.time, "monotonic", lambda: tick[0])
+    monkeypatch.setattr(collection, "_PinnedHTTPSConnection", ExpiredHeaderConnection)
+    with pytest.raises(CollectionError, match="deadline"):
+        collect(adapter, capability=capability())
+    assert not response.read_calls
+    assert response.closed
+    assert FakeConnection.instances[0].closed
 
 
 def test_validator_injection_precedes_resolution(monkeypatch: pytest.MonkeyPatch) -> None:

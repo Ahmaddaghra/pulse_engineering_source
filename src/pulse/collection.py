@@ -327,12 +327,31 @@ class HttpsAdapter:
         timer = threading.Timer(remaining, connection.abort)
         timer.daemon = True
         timer.start()
+        response: http.client.HTTPResponse | None = None
         try:
             connection.request("GET", target, headers=headers)
             response = connection.getresponse()
             # Redirects are never followed, including same-host redirects.
             if 300 <= response.status < 400 and response.status != 304:
                 raise CollectionBlocked("redirects are not authorized")
+            # Retry scheduling needs only headers. Never consume a throttling
+            # error body: it may be compressed, oversized or unbounded.
+            if response.status in (429, 503):
+                if time.monotonic() >= deadline:
+                    raise CollectionError("collection deadline expired")
+                received_at = datetime.now(UTC)
+                try:
+                    retry_after = _validator(response.getheader("Retry-After"))
+                except CollectionError:
+                    retry_after = None
+                if parse_retry_after(retry_after, now=received_at) is None:
+                    retry_after = None
+                return CollectionResponse(
+                    status=response.status,
+                    body=b"",
+                    received_at=received_at,
+                    retry_after=retry_after,
+                )
             encoding = response.getheader("Content-Encoding", "identity")
             if encoding.lower().strip() != "identity":
                 raise CollectionError("compressed representations are not accepted")
@@ -369,7 +388,17 @@ class HttpsAdapter:
             raise CollectionError("bounded HTTPS collection failed") from exc
         finally:
             timer.cancel()
-            connection.close()
+            for resource in (response, connection):
+                if resource is not None:
+                    try:
+                        resource.close()
+                    except OSError:
+                        # Cleanup cannot replace a classified response or the
+                        # original transport error. Attempt both closes anyway.
+                        try:
+                            connection.abort()
+                        except OSError:
+                            pass
 
 
 class FixtureAdapter:
