@@ -4,7 +4,16 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Identity, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -21,7 +30,9 @@ class Source(Base):
     __tablename__ = "sources"
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     feed_id: Mapped[str] = mapped_column(String(120), unique=True)
-    current_policy_id: Mapped[str | None] = mapped_column(String(36))
+    current_policy_id: Mapped[str | None] = mapped_column(
+        ForeignKey("source_policies.id", name="fk_source_policy_head", use_alter=True)
+    )
     next_due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     cache_key: Mapped[str | None] = mapped_column(String(240))
     etag: Mapped[str | None] = mapped_column(String(512))
@@ -30,7 +41,18 @@ class Source(Base):
 
 class Policy(Base):
     __tablename__ = "source_policies"
-    __table_args__ = (UniqueConstraint("source_id", "version"),)
+    __table_args__ = (
+        UniqueConstraint("source_id", "version"),
+        CheckConstraint(
+            "retention_seconds > 0 AND expires_at > effective_from",
+            name="policy_retention_positive",
+        ),
+        CheckConstraint(
+            "max_bytes BETWEEN 1 AND 4194304 AND max_items BETWEEN 0 AND 1000 "
+            "AND max_depth BETWEEN 1 AND 64 AND timeout_seconds BETWEEN 1 AND 30",
+            name="policy_limits_bounded",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     source_id: Mapped[str] = mapped_column(ForeignKey("sources.id"))
     version: Mapped[int]
@@ -75,7 +97,11 @@ class OriginBudget(Base):
 
 class Attempt(Base):
     __tablename__ = "fetch_attempts"
-    __table_args__ = (UniqueConstraint("source_id", "schedule_key"),)
+    __table_args__ = (
+        UniqueConstraint("source_id", "schedule_key"),
+        CheckConstraint("fence >= 0", name="attempt_fence_nonnegative"),
+        Index("ix_attempt_due", "state", "due_at"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     source_id: Mapped[str] = mapped_column(ForeignKey("sources.id"))
     policy_id: Mapped[str] = mapped_column(ForeignKey("source_policies.id"))
@@ -111,12 +137,18 @@ class Receipt(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     schema_version: Mapped[str] = mapped_column(String(40), default="metadata-envelope-v1")
+    collection_parser_version: Mapped[str] = mapped_column(
+        String(40), default="xml-metadata-v1", server_default="xml-metadata-v1"
+    )
     clock_quality: Mapped[str] = mapped_column(default="collector_utc_db_clock_unqualified")
 
 
 class Outbox(Base):
     __tablename__ = "outbox"
-    __table_args__ = (UniqueConstraint("topic", "receipt_id", "version"),)
+    __table_args__ = (
+        UniqueConstraint("topic", "receipt_id", "version"),
+        Index("ix_outbox_due", "topic", "state", "due_at"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     topic: Mapped[str] = mapped_column(String(80))
     receipt_id: Mapped[str] = mapped_column(ForeignKey("fetch_receipts.id"))
@@ -172,7 +204,10 @@ class Revision(Base):
 
 class Observation(Base):
     __tablename__ = "feed_item_observations"
-    __table_args__ = (UniqueConstraint("receipt_id", "ordinal", "parser_version"),)
+    __table_args__ = (
+        UniqueConstraint("receipt_id", "ordinal", "parser_version"),
+        Index("ix_observation_occurrence", "occurrence_id", "received_at"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     receipt_id: Mapped[str] = mapped_column(ForeignKey("fetch_receipts.id"))
     source_id: Mapped[str] = mapped_column(ForeignKey("sources.id"))
@@ -197,6 +232,7 @@ class Availability(Base):
 
 class HealthInterval(Base):
     __tablename__ = "source_health_intervals"
+    __table_args__ = (Index("ix_health_source", "source_id", "recorded_at"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     source_id: Mapped[str] = mapped_column(ForeignKey("sources.id"))
     fetch_id: Mapped[str | None] = mapped_column(ForeignKey("fetch_attempts.id"))
