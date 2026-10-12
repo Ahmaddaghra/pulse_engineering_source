@@ -4,7 +4,51 @@ Executive verdict: **PARTIAL**. The offline observed-only vertical slice passes 
 software checks. Operational G0/G1 qualification and the blocked controls below do not pass by
 inference from these tests.
 
-## Immutable tested revision and environment
+## PR #3 review fixes: latest verification
+
+The owner review of `e1284e729302ef4849042455791a38b8c1067974` is recorded in
+[review 5494912411](https://github.com/Ahmaddaghra/pulse_engineering_source/pull/3#pullrequestreview-5494912411).
+Latest executed application revision: **`f781814444dfb33bd95abe1d802835c09ffc62f6`**.
+The feature incorporated `main` at `f98889d3efd4d5deefd3e1909212be4406c67e90` via merge
+`8aa55ac`; the owner explicitly selected `main` as the draft PR base. Original design documents
+remain unchanged. The baseline evidence below is retained as historical evidence, not the
+verification result for these fixes.
+
+On the same isolated PostgreSQL 17.10 / CPython 3.12.14 environment, the complete suite passed
+**298 tests, 0 failures, 0 errors, 0 skips**, in **30.55 seconds**:
+
+```sh
+make check
+PULSE_DATABASE_URL=postgresql+psycopg://ahmad@127.0.0.1:55432/pulse_m1 uv run alembic check
+git diff --check
+PULSE_TEST_DATABASE_URL=postgresql+psycopg://ahmad@127.0.0.1:55432/pulse_m1 uv run pytest -q --junitxml=../m1-review-test-results.xml
+```
+
+Ruff lint/format and strict mypy passed. Alembic detected no new upgrade operations; identity
+versioning changes require no schema migration. The existing Starlette/httpx warning remains.
+
+| Test module | Latest cases passed | New review regression evidence |
+| --- | ---: | --- |
+| `tests/test_collection.py` | 154 | Header-only 429/503 handling, compressed/oversized error bodies, malformed ancillary headers, response/connection cleanup faults |
+| `tests/test_capture.py` | 35 | Actual HTTPS-adapter path with fake transport and real PostgreSQL preserves Retry-After/RATE_LIMITED state, reads no error body, stores no payload/receipt/outbox |
+| `tests/test_worker.py` | 41 | Mutable timestamp/precision cannot split identity; unique legacy continuation is audited; conflicting legacy identities are quarantined; final incoming and cross-source legacy approval/artifact/receipt-retention expiry rolls back new effects |
+| `tests/test_api_snapshots.py` | 67 | Mixed-case and malformed HTTP(S) GUID suppression across observations/articles/sealed replay; opaque GUIDs and permitted replay remain intact |
+| `tests/test_restore.py` | 1 | Complete logical restore/reconciliation test rerun with the revised source |
+
+The 110 additional cases supplement the baseline durability, temporal, rights and restore
+tests. A legacy-continuation regression verifies the original occurrence/revision/observation IDs,
+manifest, hash and replay payload remain unchanged after a corrected timestamp arrives. Multiple
+compatible historical occurrences remain immutable and produce explicit degraded rejection
+evidence rather than another occurrence. Existing consumed `parser-v1` events remain idempotent;
+new revisions record `normalization-v2`. Cross-source expiry regressions deliberately delay the
+final permission read; the subsequent fresh DB timestamp rejects approval, artifact and
+receipt-retention expiry and rolls back new audit/consumption/evidence. A permitted control
+continues the same legacy identity successfully.
+
+All transport responses in these regressions are controlled fixtures; no publisher request was
+made. Hosted verification for this revision is pending and will be recorded after execution.
+
+## Baseline immutable tested revision and environment
 
 Executed source revision: **`3c55202bcc41b3e8ebf7b8e4ed6adb8f3a521851`**.
 Application tests use that source; later CI-only changes isolate disposable Compose volumes
@@ -22,7 +66,7 @@ Locked dependencies are in `uv.lock`. All synthetic observations are explicitly 
 They establish software correctness only, not throughput, source feasibility, representative
 coverage, forecasting accuracy or newsroom utility.
 
-## Commands and results
+## Baseline commands and results
 
 ```sh
 uv sync --frozen --python 3.12
@@ -32,7 +76,7 @@ make check
 PULSE_TEST_DATABASE_URL=postgresql+psycopg://ahmad@127.0.0.1:55432/pulse_m1 uv run pytest -q --junitxml=../m1-test-results.xml
 ```
 
-Final full-suite result: **188 passed, 0 failed, 0 skipped**, in **18.96 seconds**.
+Baseline full-suite result: **188 passed, 0 failed, 0 skipped**, in **18.96 seconds**.
 One Starlette/httpx test-client deprecation warning remains; it is documented as dependency
 maintenance work and is not suppressed. Earlier review runs exposed failures; those defects were
 fixed and the final full suite was rerun. The final result is not an aggregation of selectively
@@ -71,7 +115,7 @@ Local Docker image/service execution: **BLOCKED**. `docker info` failed because
 The GitHub Actions workflow is configured to build/run the Compose stack and test actual API
 startup; the executed remote PASS is recorded below.
 
-## Hosted CI and Docker runtime evidence
+## Baseline hosted CI and Docker runtime evidence
 
 GitHub Actions run [38292026796](https://github.com/Ahmaddaghra/pulse_engineering_source/actions/runs/38292026796)
 **PASS** on runtime/CI revision **`f385cb3c7e50416f08722e4f963943feb44b90c8`**.
@@ -91,7 +135,7 @@ Docker runtime is therefore **test-passed on the hosted Linux runner**. The loca
 remains unavailable. This is a software smoke, not sustained production qualification. Disposable
 CI volumes use project `pulse-m1-ci-smoke` so cleanup cannot erase development project volumes.
 
-## Fresh database and actual server smoke
+## Baseline fresh database and actual server smoke
 
 On a separate empty `pulse_m1_demo` native database, migrations and `alembic check` passed.
 The following commands executed (environment pointed at that separate database/object root):
@@ -126,7 +170,7 @@ hidden by application-factory unit tests. Checked-in OpenAPI was retrieved from 
 | Expired/stale worker leases | Capture and parser fence/expiry rejection; lease expiring inside effects transaction rolls back DB changes | PASS |
 | Duplicate observations and out-of-order receipt processing | Receipt/ordinal observations remain distinct; current state follows receive chronology and derived qualifying first_seen | PASS |
 | Article edit and A → B → A | Two distinct revisions can serve three immutable observations; all exact receipt links and chronology remain | PASS |
-| Reused URL / identical content at different publishers | GUID/time change splits occurrence; publisher scope separates syndicated copies; no event/origin identity is invented | PASS within explicit ambiguous-identity limit |
+| Reused URL / identical content at different publishers | Distinct GUID separates occurrences; mutable publisher times remain revision data; publisher scope separates syndicated copies; no event/origin identity is invented | PASS within explicit ambiguous-identity limit (review contract supersedes timestamp identity) |
 | 304 missing cached artifact | Validators cleared, no accepted 304 receipt, gap/retry persisted, next attempt unconditional | PASS |
 | Simultaneous 429/503 and healthy work | Parallel responses persist separate backoffs, healthy source processes; one shared-account active lease and limited half-open probe; long throttle cannot fill backlog with repeated same-source polls | PASS synthetic bounded scenario |
 | Revocation during fetch/object write | Source head/version rechecked before acceptance; no receipt/outbox, unaccepted content erased, safe failure evidence remains | PASS |
@@ -164,7 +208,8 @@ not an external publisher connection.
   behavior; full v0.2 research/editorial design is broader and remains gated.
 - **Code-complete for the offline path**: durable attempt → policy-gated fixture → permitted object
   → receipt/cache/outbox → fenced/idempotent revisions → witnessed observed API → immutable seal.
-- **Test-passed**: 188/0/0 locally and 188/0/0 in hosted CI, plus real Docker/Compose/server smoke
+- **Test-passed**: latest review source has 298/0/0 locally; hosted verification is pending.
+  Baseline 188/0/0 local/hosted and real Docker/Compose/server smoke remain historical evidence
   on the named immutable source revisions.
 - **Operationally-qualified**: **NO**. M1's whole Definition of Done is **not declared complete**.
   G0 rights and G1 operational release remain HOLD until their independent evidence exists.

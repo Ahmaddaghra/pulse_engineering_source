@@ -73,7 +73,9 @@ fetch route and no policy-registration route.
    sets a finite lease and consults the shared persisted origin budget. The current approval is
    checked before collection; expired, unknown, revoked and changed versions fail closed.
 3. Collection occurs outside the database transaction. HTTP 429/503 update persisted Retry-After,
-   exponential jitter and breaker state. Transport and XML rejection become explicit failures.
+   exponential jitter and breaker state. Throttling responses use headers only; compressed or
+   oversized error bodies are never read or stored, and unrelated validators cannot discard a
+   usable Retry-After. Transport and XML rejection become explicit failures.
    Only supported permitted metadata survives transient `xml-metadata-v1` extraction;
    the receipt records that immutable transform version.
 4. Rights are checked after collection and before the object put. A new envelope is stored using
@@ -89,12 +91,16 @@ fetch route and no policy-registration route.
    operational eligibility; reconciliation can append the witness at the actual later recovery
    time. It cannot backdate availability.
 7. The parser directly polls the transactional outbox. Claim state is operational and renewable
-   through a new fence after expiry. Publication occurrences, content revisions, every receipt
-   observation and consumer deduplication commit together. Final lease validation occurs inside
+   through a new fence after expiry. Versioned occurrence resolution excludes mutable publisher
+   times. Unique permitted legacy identities continue with audit; conflicts become explicit
+   rejected-item ambiguity. Content revisions, every receipt observation and consumer
+   deduplication commit together. Final lease validation occurs inside
    the effects transaction. A committed effect followed by an acknowledgment crash is safely
    redelivered using `(consumer, event_id, version)` deduplication.
 8. A separate parsed-receipt witness follows effects commit, then the event acknowledgment changes
-   operational state to `DONE`. There is no external broker and no exactly once delivery claim.
+   operational state to `DONE`. Rights and retention are rechecked before new effects commit,
+   including expiry of the legacy metadata used during identity resolution. There is no external
+   broker and no exactly once delivery claim.
 
 ```mermaid
 sequenceDiagram
@@ -174,7 +180,9 @@ gaps remain visible after later successful requests; any retained gap conservati
 the response. Automatic completeness certification/gap closure is not implemented.
 
 Read routes require a configured API bearer token. Sealing and replay require a separate audit
-token; equal/missing credentials fail closed. `/health` is a minimal liveness endpoint; readiness
+token; equal/missing credentials fail closed. Case-variant or malformed HTTP URL GUIDs obey
+link-display permission, host and protocol restrictions without changing stored identifiers.
+`/health` is a minimal liveness endpoint; readiness
 checks PostgreSQL and migration heads. This is a single operator deployment boundary, not a
 multi-tenant identity or authorization system.
 

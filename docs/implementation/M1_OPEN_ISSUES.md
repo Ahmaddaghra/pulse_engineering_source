@@ -12,7 +12,8 @@ This work does not alter that PR or push to main. Original v0.1/v0.2 documents a
 - v0.1's monotone first-seen wording conflicts with v0.2's late-receipt correction contract.
   v0.2 governs: current first_seen is derived from qualifying receipt history; sealed snapshots retain
   their frozen value. No historical forecast is reconstructed.
-- Publisher GUID plus publication timestamp identifies an occurrence where present. URL-only or
+- Original interpretation, superseded by PR #3 remediation below: publisher GUID plus publication
+  timestamp identified an occurrence where present. URL-only or
   GUID-only identities are explicitly ambiguous. Same GUID and timestamp reused by a publisher
   cannot be disambiguated from an edit without additional licensed evidence. No news-event or
   independent-reporting identity is inferred from content equality.
@@ -48,7 +49,7 @@ qualification are tracked separately from local PostgreSQL fault tests in M1_TES
 | Production DB roles, immutable remote object versions and tamper-resistant audit | NOT IMPLEMENTED | Local development uses a trusted DB operator and private filesystem |
 | Retention service operation and backup erasure | PARTIAL | Reconciler erases local expired/revoked bytes and derives invalidation; sustained erasure latency and remote/backup deletion need proof |
 | Multi-tenant/user authorization | NOT IMPLEMENTED | Two bearer capabilities are a single-operator deployment boundary |
-| Exact ambiguous occurrence identity | OPEN CONTRACT LIMIT | Same publisher/GUID/time reuse cannot be resolved as edit vs new publication without extra evidence |
+| Exact ambiguous occurrence identity | OPEN CONTRACT LIMIT | GUID or URL reuse cannot be resolved as edit vs new publication without extra evidence |
 | Parser-version replay administration | PARTIAL | Version-addressed records and future-version invariance are tested; no general reparse/upgrade workflow |
 | Content-family/event identity and downstream event outbox | OUT OF M1 SLICE | No inferred content families, events or event-resolution worker; full v0.2 event/research manifests unavailable |
 | Coverage completeness and gap resolution | PARTIAL | All retained gaps stay visible and conservatively degrade results; no automatic completeness certification, closure, recovery warm-up or panel enrollment study |
@@ -75,3 +76,29 @@ Synthetic admission tests do not establish throughput or sustained fairness.
 One installed Starlette/httpx test-client deprecation warning remains. The locked dependencies
 work in executed tests; replacing the client should follow compatible FastAPI/Starlette guidance
 and a separate dependency update, not expand this runtime's dependency surface during M1.
+
+## PR #3 review remediation contract (2026-10-12)
+
+The independent review of `e1284e729302ef4849042455791a38b8c1067974` identified timestamp-driven
+occurrence splitting, error-body handling that discards 429/503 retry instructions, and case-sensitive
+URL GUID display suppression. Regression tests accompany the fixes.
+
+The revised identity transform `occurrence-v2` uses publisher-scoped opaque GUID, otherwise a
+conservatively normalized URL; mutable publication time, precision and title remain revision data.
+`normalization-v2` identifies this revised identity-resolution transform. Envelope parser/message
+version `parser-v1` stays compatible with already queued requests; committed consumption prevents
+old receipts from being reparsed automatically.
+
+A unique retained, currently permitted legacy identity can be continued by future observations,
+with an append-only audit reference. Legacy approval, artifact and receipt-retention deadlines
+are checked again before new effects commit, including evidence from another source at the
+same publisher. Legacy occurrences/revisions/observations and sealed snapshots
+are never reassigned or edited. If old timestamp-based identities produce multiple compatible
+candidates, the item is rejected as identity ambiguity with candidate IDs in policy-safe audit
+records; another occurrence is not manufactured. GUID reuse and URL-only reuse remain unresolvable
+without stronger source-specific identity evidence. Changing a timestamp alone cannot establish
+an independent publication occurrence.
+
+The project owner explicitly selected retargeting this draft to `main` after PR #1's merge. The
+feature branch incorporates `origin/main` without rewriting earlier implementation/review commits.
+No merge of PR #3 or live ingestion is authorized by this remediation.

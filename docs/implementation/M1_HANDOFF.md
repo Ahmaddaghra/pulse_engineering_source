@@ -9,11 +9,19 @@ qualified. Exact test revision/results and blocked requirements are in
 ## Git and review
 
 Feature branch: `feat/m1-durable-ingestion`.
-Base: `docs/pulse-v0.2-review-integration` at `d7d4eceb8ff0fa940370c8847ba6813f5b0af39f`.
-Draft [pull request #3](https://github.com/Ahmaddaghra/pulse_engineering_source/pull/3) targets that branch and is explicitly stacked on PR #1's specification work.
+Current PR base: `main`, reconciled at `f98889d3efd4d5deefd3e1909212be4406c67e90`.
+Original implementation base: `docs/pulse-v0.2-review-integration` at
+`d7d4eceb8ff0fa940370c8847ba6813f5b0af39f`. The project owner explicitly requested
+retargeting after PR #1 merged; the feature incorporates main without rewriting review history.
+Draft [pull request #3](https://github.com/Ahmaddaghra/pulse_engineering_source/pull/3) now targets main.
 PR #1 was already merged before this run; this implementation did not change or merge it.
 No push to main, production deployment or live publisher request was performed.
-Executed source revision: `3c55202bcc41b3e8ebf7b8e4ed6adb8f3a521851`.
+Latest executed source revision: `f781814444dfb33bd95abe1d802835c09ffc62f6`.
+The complete review suite passed 298 tests locally with no failures or skips; hosted results
+are recorded separately in the test evidence. Review fixes preserve identity across timestamp
+corrections, honor 429/503 retry headers without reading error bodies, and apply link-display
+restrictions to mixed-case and malformed HTTP(S) GUIDs. Legacy identity continuation/quarantine
+and `normalization-v2` are described in the data model and open issues.
 Use `git rev-parse HEAD` for the checkout revision; the recorded test revision is immutable.
 
 ## Reproducible Docker development path

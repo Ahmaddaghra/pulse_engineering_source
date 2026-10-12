@@ -62,19 +62,33 @@ A feed delivery is a receipt. Each accepted item within that delivery is a separ
 identified by receipt, ordinal and parser version. The same item in two deliveries creates two
 observations, including HTTP 304 deliveries with valid cached bytes.
 
-A publication occurrence is scoped to a publisher. `occurrence-v1` uses a GUID where available,
-otherwise a conservatively normalized URL; an interpretable publication claim is included when
-available. The raw permitted fields remain on the revision. GUID-only and URL-only identities
-carry explicit ambiguity rather than pretending a URL uniquely identifies a news development.
+A publication occurrence is scoped to a publisher. `occurrence-v2` uses a stripped opaque GUID
+where available, otherwise a conservatively normalized URL. Publication time, precision and title
+are revision attributes, never independent story identity. The raw permitted fields remain on the
+revision. GUID reuse and URL-only identities carry explicit ambiguity rather than pretending a
+publisher date or URL uniquely identifies a news development.
 Different publishers syndicating identical metadata create different publication occurrences.
 
 The receipt records the fixed XML extraction transform `xml-metadata-v1`. A revision records
 the exact permitted metadata fingerprint within an occurrence, plus
-`parser-v1`, `normalization-v1` and `metadata-envelope-v1`. Identical A bytes can reuse a
-revision ID after B, while all three receipt observations preserve A → B → A order. A title edit
+`parser-v1`, `normalization-v2` and `metadata-envelope-v1`. The normalization version includes
+identity resolution; already committed `normalization-v1` records remain unchanged. Identical A
+bytes can reuse a revision ID after B, while all three receipt observations preserve A → B → A
+order. A title edit
 is a new revision within the same defensible occurrence identity. Reusing a URL with a distinct
-GUID/publication time is a separate occurrence. Reusing every permitted identity field cannot be
+GUID is a separate occurrence. Changing a publication claim alone appends a revision. Reusing a
+GUID or URL without stronger publisher identity evidence cannot be
 disambiguated from an edit without additional licensed evidence; that limitation is explicit.
+
+The v1 timestamp-derived key is retained only on historical rows. Future observations can continue
+a unique currently permitted, retained legacy occurrence; an append-only audit reference records
+that v2 resolution. The chosen legacy evidence must remain authorized and retained through the
+final commit check, including when it belongs to another source at the same publisher.
+A matching URL may narrow GUID-reuse candidates. Multiple compatible legacy
+occurrences are quarantined as `publication_identity_ambiguous`, with candidate IDs in audit and
+receipt rejection evidence. Historical IDs are never merged or reassigned and old seals are not
+resealed. Pending `parser-v1` outbox requests remain processable under the new normalization
+transform; already consumed requests remain idempotent.
 
 There is no inferred content-family, independent reporting origin or news-event table in M1.
 Content equality does not establish those identities.
