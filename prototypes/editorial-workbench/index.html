@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>PULSE — Editorial Workbench</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">انتقل إلى المحتوى / Skip to content</a>
+    <aside id="sidebar" class="sidebar" aria-label="Navigation"></aside>
+    <div class="shell">
+      <header id="topbar" class="topbar"></header>
+      <div id="demo" class="demo"></div>
+      <main id="main" tabindex="-1"></main>
+      <footer id="footer"></footer>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <dialog id="action-dialog" aria-labelledby="dialog-title">
+      <form id="action-form">
+        <h2 id="dialog-title"></h2>
+        <p id="dialog-context"></p>
+        <label id="dialog-label" for="action-choice"></label
+        ><select id="action-choice" required></select>
+        <div class="dialog-buttons">
+          <button
+            type="button"
+            data-cmd="cancel-dialog"
+            id="cancel-dialog"
+          ></button
+          ><button class="primary" type="submit" id="confirm-dialog"></button>
+        </div>
+      </form>
+    </dialog>
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
