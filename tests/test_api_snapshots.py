@@ -19,6 +19,7 @@ from pulse.models import (
     Availability,
     HealthInterval,
     Observation,
+    Policy,
     Receipt,
     Revision,
     Snapshot,
@@ -26,7 +27,7 @@ from pulse.models import (
 )
 from pulse.objects import LocalObjectStore
 from pulse.policy import revoke_policy
-from pulse.snapshots import SnapshotConflict, seal_snapshot
+from pulse.snapshots import SnapshotConflict, permitted_fields, seal_snapshot
 from pulse.worker import run_parser_once
 from tests.helpers import approve, ingest, xml
 
@@ -221,6 +222,121 @@ def test_rights_field_filter_missing_artifact_and_revoked_replay(
     missing = client.get(f"/v1/snapshots/{sealed.id}", headers=AUDITOR).json()
     assert missing["payload"] is None
     assert missing["manifest"] == sealed.manifest
+
+
+@pytest.mark.parametrize(
+    "guid, link_allowed, host, visible",
+    [
+        ("HTTPS://example.org/news/1", False, "example.org", False),
+        ("HtTpS://example.org/news/1", False, "example.org", False),
+        ("HTtp://example.org/news/1", False, "example.org", False),
+        ("https://example.org/news/1", False, "example.org", False),
+        ("http://example.org/news/1", False, "example.org", False),
+        ("  HtTpS://example.org/news/1", False, "example.org", False),
+        ("\tHTTPS://example.org/news/1", False, "example.org", False),
+        ("\x00HTTPS://example.org/news/1", False, "example.org", False),
+        ("HTTPS://example.org/news/1", True, "other.example.org", False),
+        ("HTTPS://[broken", True, "example.org", False),
+        ("http s://example.org/news/1", True, "example.org", False),
+        ("ht\ttps://example.org/news/1", True, "example.org", False),
+        ("ht\x00tps://example.org/news/1", True, "example.org", False),
+        ("HTTPS://example.org/news/\n1", True, "example.org", False),
+        (" https://example.org/news/1", True, "example.org", False),
+        ("HTTP://example.org/news/1", True, "example.org", False),
+        ("HTTPS://example.org@other.example.org/news/1", True, "example.org", False),
+        ("HTTPS://example.org:444/news/1", True, "example.org", False),
+        ("HTTPS://example.org/news/1", True, "example.org", True),
+        ("HtTpS://example.org/news/1", True, "example.org", True),
+        ("https://example.org/news/1", True, "example.org", True),
+        ("article-1", False, "example.org", True),
+        ("urn:publisher:article-1", False, "example.org", True),
+        ("publisher-http:article-1", False, "example.org", True),
+        ("article/HTTPS://example.org/news/1", False, "example.org", True),
+        ("  opaque publisher GUID  ", False, "example.org", True),
+    ],
+)
+def test_permitted_guid_url_classification_preserves_stored_identity(
+    guid: str, link_allowed: bool, host: str, visible: bool
+) -> None:
+    revision = Revision(fields={"guid": guid, "title": "permitted metadata"})
+    policy = Policy(
+        allowed_fields=["guid", "title"],
+        link_display_allowed=link_allowed,
+        allowed_host=host,
+    )
+    fields = permitted_fields(revision, policy)
+    expected = {"title": "permitted metadata"}
+    if visible:
+        expected["guid"] = guid
+    assert fields == expected
+    assert revision.fields == {"guid": guid, "title": "permitted metadata"}
+
+
+@pytest.mark.parametrize(
+    "scheme", ["HTTPS", "HtTpS", "HTtp", "https", "http", " HTTPS", "ht\ttps", "https "]
+)
+@pytest.mark.parametrize("restriction", ["no_links", "wrong_host"])
+def test_url_guids_follow_link_rights_across_current_history_and_replay(
+    settings: Settings,
+    engine: Engine,
+    store: LocalObjectStore,
+    scheme: str,
+    restriction: str,
+) -> None:
+    host = "example.org" if restriction == "no_links" else "other.example.org"
+    approve(
+        engine,
+        allowed_fields=["guid", "title"],
+        link_display_allowed=restriction != "no_links",
+        allowed_host=host,
+        endpoint=f"fixture://{host}/feed",
+    )
+    guid = f"{scheme}://example.org/news/1"
+    stored_guid = guid.strip()  # Feed text normalization already removes outer whitespace.
+    receipt_id = parsed(engine, store, xml("restricted URL GUID", guid=guid))
+    sealed = seal_snapshot(engine, store, f"guid-{scheme}-{restriction}")
+    client = TestClient(create_app(settings, engine))
+    for route in ("/v1/observations", "/v1/articles"):
+        response = client.get(route, headers=READER)
+        assert response.status_code == 200
+        assert response.json()["records"][0]["fields"] == {"title": "restricted URL GUID"}
+        assert stored_guid not in response.text
+    replay = client.get(f"/v1/snapshots/{sealed.id}", headers=AUDITOR)
+    assert replay.status_code == 200
+    assert replay.json()["payload"][0]["fields"] == {"title": "restricted URL GUID"}
+    assert replay.json()["manifest"] == sealed.manifest
+    assert stored_guid not in replay.text
+    with transaction(engine) as session:
+        observation = session.scalar(
+            select(Observation).where(Observation.receipt_id == receipt_id)
+        )
+        assert observation is not None
+        revision = session.get(Revision, observation.revision_id)
+        assert revision is not None
+        assert revision.fields == {"guid": stored_guid, "title": "restricted URL GUID"}
+
+
+@pytest.mark.parametrize("scheme", ["HTTPS", "HtTpS", "https"])
+def test_permitted_url_guid_replay_preserves_original_case_after_future_input(
+    settings: Settings, engine: Engine, store: LocalObjectStore, scheme: str
+) -> None:
+    approve(
+        engine,
+        allowed_fields=["guid", "title"],
+        allowed_host="example.org",
+        endpoint="fixture://example.org/feed",
+    )
+    guid = f"{scheme}://example.org/news/1"
+    parsed(engine, store, xml("original", guid=guid))
+    sealed = seal_snapshot(engine, store, "allowed-guid-prefix-invariance")
+    client = TestClient(create_app(settings, engine))
+    before = client.get(f"/v1/snapshots/{sealed.id}", headers=AUDITOR).json()
+    assert before["payload"][0]["fields"] == {"guid": guid, "title": "original"}
+    parsed(engine, store, xml("future", guid=guid))
+    after = client.get(f"/v1/snapshots/{sealed.id}", headers=AUDITOR).json()
+    assert before["manifest"] == after["manifest"]
+    assert before["sha256"] == after["sha256"]
+    assert before["payload"] == after["payload"]
 
 
 def test_missing_artifact_degrades_and_append_only_invalidation(

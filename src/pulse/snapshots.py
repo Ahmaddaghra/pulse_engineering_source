@@ -113,6 +113,9 @@ def interval_record(interval: HealthInterval) -> dict[str, Any]:
 def _display_link(value: Any, policy: Policy) -> bool:
     if not policy.link_display_allowed or not isinstance(value, str):
         return False
+    # urlsplit silently removes some controls. Never display that malformed input.
+    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value):
+        return False
     try:
         parts = urlsplit(value)
         if (
@@ -131,15 +134,27 @@ def _display_link(value: Any, policy: Policy) -> bool:
         return False
 
 
+def _http_guid(value: str) -> bool:
+    """Recognize HTTP identifiers without rewriting opaque publisher GUIDs."""
+    try:
+        if urlsplit(value).scheme.casefold() in {"http", "https"}:
+            return True
+    except ValueError:
+        pass  # A malformed authority still must respect link-display restrictions.
+    # Detect malformed HTTP scheme prefixes too, including whitespace/controls
+    # that a URL parser may strip. This only classifies; stored identity is untouched.
+    scheme, separator, _ = value.lstrip().partition(":")
+    scheme = "".join(char for char in scheme if ord(char) > 32 and ord(char) != 127)
+    return bool(separator) and scheme.casefold() in {"http", "https"}
+
+
 def permitted_fields(revision: Revision, policy: Policy) -> dict[str, Any]:
     fields = {key: value for key, value in revision.fields.items() if key in policy.allowed_fields}
     if "url" in fields and not _display_link(fields["url"], policy):
         del fields["url"]
     if "guid" in fields and isinstance(fields["guid"], str):
         # A GUID sometimes embeds a publisher URL and must respect link rights too.
-        if fields["guid"].startswith(("http:", "https:")) and not _display_link(
-            fields["guid"], policy
-        ):
+        if _http_guid(fields["guid"]) and not _display_link(fields["guid"], policy):
             del fields["guid"]
     return fields
 
