@@ -1,0 +1,175 @@
+{
+  "properties": {
+    "publisher_id": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Publisher Id",
+      "type": "string"
+    },
+    "owner_id": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Owner Id",
+      "type": "string"
+    },
+    "endpoint": {
+      "title": "Endpoint",
+      "type": "string"
+    },
+    "allowed_host": {
+      "maxLength": 253,
+      "minLength": 1,
+      "title": "Allowed Host",
+      "type": "string"
+    },
+    "scope": {
+      "default": "offline_fixture",
+      "title": "Scope",
+      "type": "string"
+    },
+    "state": {
+      "default": "APPROVED",
+      "title": "State",
+      "type": "string"
+    },
+    "effective_from": {
+      "format": "date-time",
+      "title": "Effective From",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "approved_by": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Approved By",
+      "type": "string"
+    },
+    "metadata_allowed": {
+      "default": true,
+      "title": "Metadata Allowed",
+      "type": "boolean"
+    },
+    "link_display_allowed": {
+      "default": false,
+      "title": "Link Display Allowed",
+      "type": "boolean"
+    },
+    "derived_allowed": {
+      "default": true,
+      "title": "Derived Allowed",
+      "type": "boolean"
+    },
+    "training_allowed": {
+      "default": false,
+      "title": "Training Allowed",
+      "type": "boolean"
+    },
+    "allowed_fields": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Allowed Fields",
+      "type": "array"
+    },
+    "retention_seconds": {
+      "default": 86400,
+      "maximum": 31536000,
+      "minimum": 1,
+      "title": "Retention Seconds",
+      "type": "integer"
+    },
+    "poll_seconds": {
+      "default": 60,
+      "maximum": 86400,
+      "minimum": 1,
+      "title": "Poll Seconds",
+      "type": "integer"
+    },
+    "max_bytes": {
+      "default": 1048576,
+      "maximum": 4194304,
+      "minimum": 1,
+      "title": "Max Bytes",
+      "type": "integer"
+    },
+    "max_items": {
+      "default": 200,
+      "maximum": 1000,
+      "minimum": 0,
+      "title": "Max Items",
+      "type": "integer"
+    },
+    "max_depth": {
+      "default": 32,
+      "maximum": 64,
+      "minimum": 1,
+      "title": "Max Depth",
+      "type": "integer"
+    },
+    "max_text_chars": {
+      "default": 4096,
+      "maximum": 16384,
+      "minimum": 1,
+      "title": "Max Text Chars",
+      "type": "integer"
+    },
+    "timeout_seconds": {
+      "default": 10,
+      "maximum": 30,
+      "minimum": 1,
+      "title": "Timeout Seconds",
+      "type": "integer"
+    },
+    "rate_scope": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Rate Scope",
+      "type": "string"
+    },
+    "min_request_seconds": {
+      "default": 1,
+      "maximum": 86400,
+      "minimum": 0,
+      "title": "Min Request Seconds",
+      "type": "integer"
+    },
+    "attribution": {
+      "default": "Synthetic software fixture",
+      "title": "Attribution",
+      "type": "string"
+    },
+    "timestamp_quality": {
+      "default": "publisher_claim_unverified",
+      "title": "Timestamp Quality",
+      "type": "string"
+    },
+    "rollover_seconds": {
+      "default": 3600,
+      "maximum": 604800,
+      "minimum": 1,
+      "title": "Rollover Seconds",
+      "type": "integer"
+    },
+    "deletion_procedure": {
+      "default": "erase_content_keep_noncontent_audit",
+      "title": "Deletion Procedure",
+      "type": "string"
+    }
+  },
+  "required": [
+    "publisher_id",
+    "owner_id",
+    "endpoint",
+    "allowed_host",
+    "effective_from",
+    "expires_at",
+    "approved_by",
+    "rate_scope"
+  ],
+  "title": "PolicyInput",
+  "type": "object"
+}

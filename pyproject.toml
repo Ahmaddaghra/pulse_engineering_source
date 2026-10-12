@@ -1,0 +1,32 @@
+[project]
+name = "pulse-ingestion"
+version = "0.1.0"
+description = "Rights-gated durable observed-only ingestion"
+requires-python = ">=3.12"
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1", "sqlalchemy>=2.0,<3", "alembic>=1.13,<2", "psycopg[binary]>=3.2,<4", "pydantic>=2.9,<3", "defusedxml>=0.7,<1"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "hypothesis>=6,<7", "ruff>=0.8,<1", "mypy>=1.13,<2", "httpx>=0.27,<1", "types-defusedxml>=0.7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["postgres: requires a real PostgreSQL database", "restore: uses isolated database restore"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/pulse"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pulse"]

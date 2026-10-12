@@ -1,0 +1,4 @@
+# Keep the isolated Compose DB from colliding with the integration-test PG service.
+services:
+  db:
+    ports: !reset []
