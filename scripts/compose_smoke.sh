@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Requires configured distinct reader/auditor tokens, Docker and Compose v2.
-compose=(docker compose -f compose.yaml -f compose.ci.yaml)
+# All disposable DB/object volumes belong to the isolated CI project; never erase dev volumes.
+compose=(docker compose --project-name pulse-m1-ci-smoke -f compose.yaml -f compose.ci.yaml)
 trap '"${compose[@]}" down --volumes' EXIT
 "${compose[@]}" build api
 "${compose[@]}" up -d --wait db
