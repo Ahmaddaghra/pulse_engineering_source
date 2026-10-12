@@ -1,12 +1,12 @@
 # PULSE Engineering Blueprint v0.2
 
-**Status:** ENGINEERING SPECIFICATION / NOT IMPLEMENTED / Forecasting HOLD
+**Status:** ACCEPTED ENGINEERING SPECIFICATION / NOT IMPLEMENTED / Forecasting HOLD
 
 **Date:** 2026-10-12
 
 **Supersedes for planning:** v0.1, without modifying or erasing its historical source files.
 
-**Change authority:** PR #1, subject to the specification acceptance recorded in [ACCEPTANCE_REVIEW.md](ACCEPTANCE_REVIEW.md). Operational/data/research gates require their own evidence and signoffs.
+**Change authority:** PR #1, accepted under the project owner's Step 1 authorization after the checks recorded in [ACCEPTANCE_REVIEW.md](ACCEPTANCE_REVIEW.md). Operational/data/research gates require their own evidence and signoffs.
 
 ## Executive decision
 

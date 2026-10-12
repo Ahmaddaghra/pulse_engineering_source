@@ -12,9 +12,9 @@ This work is **documentation only**. The following are release gates, not assert
 | ADR-004 | REVISE publication occurrence / content family / event/development identities and append-only CAS lineage | Accepted design |
 | ADR-005 | REVISE target/baselines on chronological development only; no final holdout opening for candidate selection | Accepted design |
 | ADR-006 | KEEP honest OBSERVED_ONLY fallback; never conflate no candidates and no available evidence | Accepted design |
-| ADR-007 (new) | Require durable capture high-watermarks, reconcilers, WAL/PITR verified with object versions and deletion logs | Accepted design on specification acceptance |
-| ADR-008 (new) | Observed news-desk lane precedes optional predictive release, separate from 6-hour cutoff | Accepted design on specification acceptance |
-| ADR-009 (new) | Unusual panel coverage GROWTH label requires positive delta and count/breadth floors; thresholds development-frozen | Accepted design on specification acceptance |
+| ADR-007 (new) | Require durable capture high-watermarks, reconcilers, WAL/PITR verified with object versions and deletion logs | Accepted design |
+| ADR-008 (new) | Observed news-desk lane precedes optional predictive release, separate from 6-hour cutoff | Accepted design |
+| ADR-009 (new) | Unusual panel coverage GROWTH label requires positive delta and count/breadth floors; thresholds development-frozen | Accepted design |
 
 ## Gated work breakdown (estimates conditional on evidence)
 

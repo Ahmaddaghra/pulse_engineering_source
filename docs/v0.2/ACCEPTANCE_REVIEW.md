@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-12
 
-**Decision:** PENDING CodeRabbit review and final merge decision.
+**Decision:** ACCEPTED engineering specification. The checks below passed with no remaining blocking specification contradiction; merge is authorized by the project owner's Step 1 instruction.
 
 **Scope:** repository engineering specification, diagrams and documented contracts. Source enrollment, runtime reliability, measured model lift and newsroom value require separate gate evidence.
 
@@ -32,7 +32,7 @@ The project owner explicitly requested review and merge of PR #1 if these checks
 | Links / formatting | All local Markdown links in root README and v0.2 package resolve; code fences balance; `git diff --check` passes. |
 | Historical preservation | Git diff against base `7badece806cf28af8ba2de85844191201d86641c` confirms no edits to PULSE_BLUEPRINT.md, original diagrams, Python build scripts or stylesheet. |
 | Cross-document review | Receipt/ACK/fence/revocation, immutable temporal/identity dependencies, label maturation/holdout, API failure states, gate dependencies and open assumptions reconciled. No remaining blocking specification contradiction identified after corrections. |
-| CodeRabbit | Pending authenticated CLI review of the full PR diff plus finalization changes. |
+| CodeRabbit | Authenticated CLI review completed with **0 issues** across all ten changed files at substantive specification commit `b6d1c79`. Command: `coderabbit review --agent -t committed --base-commit 7badece806cf28af8ba2de85844191201d86641c`. The subsequent commit records this acceptance/status result without altering substantive contracts or diagrams. |
 
 Rendering command per extracted Mermaid fence: `npx --yes @mermaid-js/mermaid-cli@12.0.0 -i diagram.mmd -o diagram.png -p puppeteer.json --size 2400`; Puppeteer config selected the installed Chrome executable. The mathematical/API cases are synthetic specification exercises. No runtime collector, database, migration, recovery drill, source permission verification or forecasting evaluation was executed; the adversarial matrix remains mandatory implementation work.
 
@@ -40,4 +40,4 @@ Rendering command per extracted Mermaid fence: `npx --yes @mermaid-js/mermaid-cl
 
 [ASSUMPTIONS.md](ASSUMPTIONS.md) records ten open premises/decisions with responsible roles, required evidence and blocking gates. G0 remains HOLD; G1–G5 remain unqualified. Required data/legal, ML and newsroom/domain signoffs remain open for their respective live/research gates. Original source reviews and Phase 1–1C raw evidence were unavailable for independent comparison; the register and prior phase claims remain explicitly qualified.
 
-On specification acceptance, [README.md](README.md) and its linked package become the single v0.2 planning authority. FORECAST_QUALIFIED, model training, live source access and production deployment still require their documented gates; this PR supplies no measured acceptance evidence for them.
+[README.md](README.md) and its linked package are the single accepted v0.2 planning authority. FORECAST_QUALIFIED, model training, live source access and production deployment still require their documented gates; this PR supplies no measured acceptance evidence for them.
