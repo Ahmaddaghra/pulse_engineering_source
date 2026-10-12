@@ -46,7 +46,21 @@ receipt-retention expiry and rolls back new audit/consumption/evidence. A permit
 continues the same legacy identity successfully.
 
 All transport responses in these regressions are controlled fixtures; no publisher request was
-made. Hosted verification for this revision is pending and will be recorded after execution.
+made.
+
+Hosted [PR verification run 38300244477](https://github.com/Ahmaddaghra/pulse_engineering_source/actions/runs/38300244477)
+and [push run 38300239680](https://github.com/Ahmaddaghra/pulse_engineering_source/actions/runs/38300239680)
+passed on **`67084e09a08b944146ad713ab2811fef8c809b47`**, after reconciling and retargeting to
+`main`. The downloaded PR-run JUnit artifact reports **298 tests, 0 failures, 0 errors, 0
+skipped**, matching every module count above; pytest completed in **37.31 seconds**.
+Ruff/format/mypy, empty-database migrations, schema drift, logical restore and the fixture CLI
+flow passed. The actual Docker Compose smoke built the image, initialized isolated PostgreSQL
+and object volumes, applied head `0004`, captured/parsed/sealed the fixture, started ASGI, and
+returned `ready/reachable/0004` plus persisted observed evidence: **Compose offline API smoke PASS**.
+
+Later evidence-only commits do not change application, test, migration or runtime source from
+that verified revision. Operational G0/G1 remains HOLD; these offline results do not qualify
+live publishers, system egress, parser isolation or production recovery.
 
 ## Baseline immutable tested revision and environment
 
@@ -208,8 +222,8 @@ not an external publisher connection.
   behavior; full v0.2 research/editorial design is broader and remains gated.
 - **Code-complete for the offline path**: durable attempt → policy-gated fixture → permitted object
   → receipt/cache/outbox → fenced/idempotent revisions → witnessed observed API → immutable seal.
-- **Test-passed**: latest review source has 298/0/0 locally; hosted verification is pending.
-  Baseline 188/0/0 local/hosted and real Docker/Compose/server smoke remain historical evidence
+- **Test-passed**: latest review source has 298/0/0 locally and in hosted CI, plus actual hosted
+  Docker/Compose/API smoke. Baseline 188/0/0 and earlier server smokes remain historical evidence
   on the named immutable source revisions.
 - **Operationally-qualified**: **NO**. M1's whole Definition of Done is **not declared complete**.
   G0 rights and G1 operational release remain HOLD until their independent evidence exists.

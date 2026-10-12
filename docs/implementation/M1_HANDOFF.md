@@ -17,8 +17,8 @@ Draft [pull request #3](https://github.com/Ahmaddaghra/pulse_engineering_source/
 PR #1 was already merged before this run; this implementation did not change or merge it.
 No push to main, production deployment or live publisher request was performed.
 Latest executed source revision: `f781814444dfb33bd95abe1d802835c09ffc62f6`.
-The complete review suite passed 298 tests locally with no failures or skips; hosted results
-are recorded separately in the test evidence. Review fixes preserve identity across timestamp
+The complete review suite passed 298 tests locally and in hosted CI with no failures or skips;
+actual hosted Docker/Compose/API smoke also passed. Exact run evidence is recorded separately. Review fixes preserve identity across timestamp
 corrections, honor 429/503 retry headers without reading error bodies, and apply link-display
 restrictions to mixed-case and malformed HTTP(S) GUIDs. Legacy identity continuation/quarantine
 and `normalization-v2` are described in the data model and open issues.
