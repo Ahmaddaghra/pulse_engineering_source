@@ -10,17 +10,18 @@ import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
 
-from sqlalchemy import Engine, and_, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Engine, and_, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from pulse.availability import mark_available
 from pulse.db import db_now, evidence_lock, transaction
 from pulse.errors import PolicyBlocked, StaleLease
 from pulse.models import (
     Artifact,
+    Audit,
     Consumption,
     HealthInterval,
     Observation,
@@ -35,9 +36,9 @@ from pulse.objects import LocalObjectStore
 from pulse.policy import require_policy
 
 PARSER_VERSION = "parser-v1"
-NORMALIZATION_VERSION = "normalization-v1"
+NORMALIZATION_VERSION = "normalization-v2"
 SCHEMA_VERSION = "metadata-envelope-v1"
-IDENTITY_VERSION = "occurrence-v1"
+IDENTITY_VERSION = "occurrence-v2"
 CONSUMER = "metadata-parser"
 MAX_PARSE_ATTEMPTS = 4
 SUPPORTED_FIELDS = frozenset({"guid", "url", "title", "published_at", "published_precision"})
@@ -115,22 +116,120 @@ def normalize_url(raw: str) -> str:
 def occurrence_identity(
     item: dict[str, str], published_at: datetime | None, precision: str
 ) -> tuple[str, str]:
+    """Publication claims describe revisions, never independent occurrence identity.
+
+    The timestamp arguments remain compatible with existing callers. Their values
+    cannot distinguish a corrected claim from a newly published story.
+    """
     guid = item.get("guid", "").strip()
     raw_url = item.get("url", "").strip()
-    identity: dict[str, str] = {}
     if guid:
-        identity["guid"] = guid
-        confidence = "guid_only_ambiguous"
+        identity = {"guid": guid}
+        confidence = "guid_reuse_ambiguous"
     elif raw_url:
-        identity["url"] = normalize_url(raw_url)
+        identity = {"url": normalize_url(raw_url)}
         confidence = "url_only_ambiguous"
     else:
         raise InvalidEnvelope("item_identity_missing")
-    if published_at is not None:
-        identity["published_at"] = published_at.isoformat()
-        identity["precision"] = precision
-        confidence = "guid_timestamp" if guid else "url_timestamp_ambiguous"
     return hashlib.sha256(_json_bytes(identity)).hexdigest(), confidence
+
+
+def _resolve_occurrence(
+    session: Session,
+    receipt: Receipt,
+    policy: Policy,
+    ordinal: int,
+    item: dict[str, str],
+    identity: str,
+    confidence: str,
+    now: datetime,
+) -> Occurrence:
+    occurrence = session.scalar(
+        select(Occurrence).where(
+            Occurrence.publisher_id == policy.publisher_id,
+            Occurrence.identity_key == identity,
+            Occurrence.identity_version == IDENTITY_VERSION,
+        )
+    )
+    if occurrence is not None:
+        return occurrence
+    # Do not inflate counts at upgrade by merely putting a v2 key beside a v1 key.
+    # Read only retained metadata with currently active, derived-use permission.
+    legacy_policy = aliased(Policy)
+    rows = session.execute(
+        select(Occurrence, Revision.fields)
+        .join(Revision, Revision.occurrence_id == Occurrence.id)
+        .join(Observation, Observation.revision_id == Revision.id)
+        .join(Receipt, Receipt.id == Observation.receipt_id)
+        .join(Artifact, Artifact.key == Receipt.artifact_key)
+        .join(Source, Source.id == Receipt.source_id)
+        .join(legacy_policy, legacy_policy.id == Receipt.policy_id)
+        .where(
+            Occurrence.publisher_id == policy.publisher_id,
+            Occurrence.identity_version == "occurrence-v1",
+            Source.current_policy_id == legacy_policy.id,
+            legacy_policy.state == "APPROVED",
+            legacy_policy.metadata_allowed.is_(True),
+            legacy_policy.derived_allowed.is_(True),
+            legacy_policy.effective_from <= now,
+            legacy_policy.expires_at > now,
+            Artifact.expires_at > now,
+            Receipt.received_at
+            + func.make_interval(0, 0, 0, 0, 0, 0, legacy_policy.retention_seconds)
+            > now,
+        )
+    )
+    candidates: dict[str, Occurrence] = {}
+    matching_url: set[str] = set()
+    for row in rows:
+        legacy = cast(Occurrence, row[0])
+        fields = cast(dict[str, str], row[1])
+        try:
+            legacy_key, _ = occurrence_identity(fields, None, "unknown")
+        except InvalidEnvelope:
+            continue
+        if legacy_key != identity:
+            continue
+        candidates[legacy.id] = legacy
+        if item.get("url") and fields.get("url"):
+            try:
+                if normalize_url(item["url"]) == normalize_url(fields["url"]):
+                    matching_url.add(legacy.id)
+            except InvalidEnvelope:
+                pass
+    if matching_url:
+        candidates = {key: value for key, value in candidates.items() if key in matching_url}
+    if len(candidates) > 1:
+        for candidate in sorted(candidates):
+            session.add(
+                Audit(
+                    source_id=receipt.source_id,
+                    code="IDENTITY_AMBIGUOUS_LEGACY_CANDIDATE",
+                    reference_id=f"{receipt.id}:{ordinal}:{candidate}",
+                    recorded_at=now,
+                )
+            )
+        raise InvalidEnvelope("publication_identity_ambiguous")
+    if candidates:
+        occurrence = next(iter(candidates.values()))
+        session.add(
+            Audit(
+                source_id=receipt.source_id,
+                code="IDENTITY_LEGACY_CONTINUED_V2",
+                reference_id=f"{receipt.id}:{ordinal}:{occurrence.id}",
+                recorded_at=now,
+            )
+        )
+        return occurrence
+    occurrence = Occurrence(
+        publisher_id=policy.publisher_id,
+        identity_key=identity,
+        identity_version=IDENTITY_VERSION,
+        identity_confidence=confidence,
+    )
+    session.add(occurrence)
+    session.flush()
+    return occurrence
 
 
 def _leased(event: Outbox, fence: int, now: datetime) -> None:
@@ -245,22 +344,9 @@ def _observe(
         raise InvalidEnvelope("item_schema_invalid") from exc
     timestamp, precision = published_time(item.get("published_at"))
     identity, confidence = occurrence_identity(item, timestamp, precision)
-    occurrence = session.scalar(
-        select(Occurrence).where(
-            Occurrence.publisher_id == policy.publisher_id,
-            Occurrence.identity_key == identity,
-            Occurrence.identity_version == IDENTITY_VERSION,
-        )
+    occurrence = _resolve_occurrence(
+        session, receipt, policy, ordinal, item, identity, confidence, now
     )
-    if occurrence is None:
-        occurrence = Occurrence(
-            publisher_id=policy.publisher_id,
-            identity_key=identity,
-            identity_version=IDENTITY_VERSION,
-            identity_confidence=confidence,
-        )
-        session.add(occurrence)
-        session.flush()
     fingerprint = hashlib.sha256(_json_bytes(item)).hexdigest()
     revision = session.scalar(
         select(Revision).where(
@@ -353,7 +439,8 @@ def process_parse(
             receipt = session.get(Receipt, event.receipt_id)
             assert receipt is not None
             receipt_id = receipt.id
-            if session.get(Consumption, (CONSUMER, event.id, event.version)) is None:
+            new_effects = session.get(Consumption, (CONSUMER, event.id, event.version)) is None
+            if new_effects:
                 policy = require_policy(session, receipt.source_id, receipt.policy_id)
                 if not policy.derived_allowed:
                     raise PolicyBlocked("derived metadata processing is not permitted")
@@ -399,7 +486,12 @@ def process_parse(
             if fault is not None:
                 fault("before_effect_commit")
             # The lock is held through commit. Recheck after parsing and any blocked waits.
-            _leased(event, fence, db_now(session))
+            finished_at = db_now(session)
+            _leased(event, fence, finished_at)
+            if new_effects:
+                require_policy(session, receipt.source_id, receipt.policy_id)
+                if artifact is None or artifact.expires_at <= finished_at:
+                    raise PolicyBlocked("artifact retention expired during processing")
     except PolicyBlocked:
         _failure(engine, event_id, fence, "derived_policy_blocked", True)
         return

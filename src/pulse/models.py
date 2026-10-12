@@ -176,7 +176,7 @@ class Occurrence(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     publisher_id: Mapped[str] = mapped_column(String(80))
     identity_key: Mapped[str] = mapped_column(String(64))
-    identity_version: Mapped[str] = mapped_column(String(40), default="occurrence-v1")
+    identity_version: Mapped[str] = mapped_column(String(40), default="occurrence-v2")
     identity_confidence: Mapped[str] = mapped_column(String(40))
 
 

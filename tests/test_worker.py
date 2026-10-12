@@ -44,7 +44,9 @@ class Crash(BaseException):
     pass
 
 
-def _source(engine: Engine, *, publisher: str = "fixture-publisher") -> tuple[str, str]:
+def _source(
+    engine: Engine, *, publisher: str = "fixture-publisher", validity_seconds: int = 86400
+) -> tuple[str, str]:
     source_id, policy_id = str(uuid4()), str(uuid4())
     with transaction(engine) as session:
         now = db_now(session)
@@ -69,7 +71,7 @@ def _source(engine: Engine, *, publisher: str = "fixture-publisher") -> tuple[st
                 scope="offline_fixture",
                 state="APPROVED",
                 effective_from=now - timedelta(days=1),
-                expires_at=now + timedelta(days=1),
+                expires_at=now + timedelta(seconds=validity_seconds),
                 approved_at=now,
                 approved_by="fixture-test",
                 metadata_allowed=True,
@@ -362,7 +364,7 @@ def test_out_of_order_processing_preserves_a_b_a_receipt_history(
 
 
 @pytest.mark.postgres
-def test_guid_time_identity_separates_reused_urls_and_syndicated_publishers(
+def test_stable_guid_identity_separates_reused_urls_and_syndicated_publishers(
     engine: Engine,
     store: LocalObjectStore,
 ) -> None:
@@ -376,10 +378,10 @@ def test_guid_time_identity_separates_reused_urls_and_syndicated_publishers(
     ]:
         _capture(engine, store, source, [item])
         assert run_parser_once(engine, store)
-    assert _counts(engine) == (4, 5, 5, 5)
+    assert _counts(engine) == (3, 5, 5, 5)
     with transaction(engine) as session:
         assert {row.identity_confidence for row in session.scalars(select(Occurrence))} == {
-            "guid_timestamp",
+            "guid_reuse_ambiguous",
         }
 
 
@@ -497,3 +499,233 @@ def test_skip_locked_claim_keeps_independent_work_claimable(
         assert claim is not None and claim[0] == second_id
     other = claim_parse(engine)
     assert other is not None and other[0] == first_id
+
+
+@pytest.mark.parametrize(
+    "corrected",
+    [
+        "2026-10-12T10:50:30+03:00",
+        "2026-10-12T10:20+03:00",
+        "2026-10-12",
+        "bad",
+        "",
+    ],
+)
+@pytest.mark.postgres
+def test_corrected_publication_claim_is_revision_not_another_occurrence(engine, store, corrected):
+    source = _source(engine)
+    _capture(engine, store, source, [_item()])
+    assert run_parser_once(engine, store)
+    _capture(engine, store, source, [_item(published=corrected)])
+    assert run_parser_once(engine, store)
+    assert _counts(engine) == (1, 2, 2, 2)
+    with transaction(engine) as session:
+        observations = list(session.scalars(select(Observation).order_by(Observation.recorded_at)))
+        assert observations[0].occurrence_id == observations[1].occurrence_id
+        first, second = [session.get(Revision, obs.revision_id) for obs in observations]
+        assert first.fields["published_at"] == "2026-10-12T10:20:30+03:00"
+        assert second.fields["published_at"] == corrected
+        assert second.normalization_version == "normalization-v2"
+
+
+@given(st.one_of(st.none(), st.datetimes(timezones=st.just(UTC))), st.text())
+def test_publication_identity_does_not_depend_on_time_or_precision(timestamp, precision):
+    item = _item()
+    assert occurrence_identity(item, timestamp, precision) == occurrence_identity(item, None, "")
+
+
+@pytest.mark.postgres
+def test_timestamp_discovery_and_url_alias_do_not_manufacture_another_story(engine, store):
+    source = _source(engine)
+    first = _item(published="")
+    alias = _item()
+    alias["url"] = "https://fixture.example/renamed"
+    for item in (first, alias):
+        _capture(engine, store, source, [item])
+        assert run_parser_once(engine, store)
+    assert _counts(engine) == (1, 2, 2, 2)
+
+
+@pytest.mark.postgres
+def test_url_only_timestamp_correction_stays_explicitly_ambiguous(engine, store):
+    source = _source(engine)
+    for claim in ("2026-10-12T10:20Z", "2026-10-12T10:50Z"):
+        item = _item(published=claim)
+        del item["guid"]
+        _capture(engine, store, source, [item])
+        assert run_parser_once(engine, store)
+    assert _counts(engine) == (1, 2, 2, 2)
+    with transaction(engine) as session:
+        assert session.scalar(select(Occurrence)).identity_confidence == "url_only_ambiguous"
+
+
+def _legacy_v1(engine, store, source, item):
+    """Seed exact old committed data without executing the corrected resolver."""
+    from pulse.availability import mark_available
+
+    stamp, precision = published_time(item.get("published_at"))
+    identity = {"guid": item["guid"].strip()}
+    if stamp:
+        identity.update(published_at=stamp.isoformat(), precision=precision)
+    key = hashlib.sha256(
+        json.dumps(identity, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+    ).hexdigest()
+    receipt_id, event_id = _capture(engine, store, source, [item])
+    with transaction(engine) as session:
+        now = db_now(session)
+        policy = session.get(Policy, source[1])
+        occurrence = Occurrence(
+            publisher_id=policy.publisher_id,
+            identity_key=key,
+            identity_version="occurrence-v1",
+            identity_confidence="guid_timestamp",
+        )
+        session.add(occurrence)
+        session.flush()
+        fingerprint = hashlib.sha256(
+            json.dumps(item, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+        ).hexdigest()
+        revision = Revision(
+            occurrence_id=occurrence.id,
+            fingerprint=fingerprint,
+            fields=item,
+            published_at=stamp,
+            published_precision=precision,
+            parser_version="parser-v1",
+            normalization_version="normalization-v1",
+            schema_version="metadata-envelope-v1",
+            recorded_at=now,
+        )
+        session.add(revision)
+        session.flush()
+        receipt = session.get(Receipt, receipt_id)
+        observation = Observation(
+            receipt_id=receipt_id,
+            source_id=source[0],
+            feed_id=session.get(Source, source[0]).feed_id,
+            ordinal=0,
+            occurrence_id=occurrence.id,
+            revision_id=revision.id,
+            parser_version="parser-v1",
+            received_at=receipt.received_at,
+            recorded_at=now,
+        )
+        session.add(observation)
+        session.add(
+            Consumption(
+                consumer="metadata-parser", event_id=event_id, version="parser-v1", recorded_at=now
+            )
+        )
+        session.get(Outbox, event_id).state = "DONE"
+        session.flush()
+        ids = occurrence.id, revision.id, observation.id
+    mark_available(engine, "receipt", receipt_id)
+    mark_available(engine, "parsed_receipt", receipt_id)
+    return ids
+
+
+@pytest.mark.postgres
+def test_unique_legacy_occurrence_continues_without_changing_sealed_history(engine, store):
+    from fastapi.testclient import TestClient
+
+    from pulse.api import create_app
+    from pulse.config import Settings
+    from pulse.models import Audit
+    from pulse.snapshots import seal_snapshot
+
+    source = _source(engine)
+    old_ids = _legacy_v1(engine, store, source, _item())
+    snapshot = seal_snapshot(engine, store, "legacy-pubdate-review")
+    config = Settings(
+        database_url=engine.url.render_as_string(hide_password=False),
+        object_root=store.root,
+        api_token="reader",
+        audit_token="auditor",
+    )
+    client = TestClient(create_app(config, engine))
+    headers = {"Authorization": "Bearer auditor"}
+    before = client.get(f"/v1/snapshots/{snapshot.id}", headers=headers).json()
+    for claim in ("2026-10-12T10:50+03:00", "2026-10-12T11:30:00+03:00"):
+        _capture(engine, store, source, [_item(published=claim)])
+        assert run_parser_once(engine, store)
+    assert _counts(engine) == (1, 3, 3, 3)
+    after = client.get(f"/v1/snapshots/{snapshot.id}", headers=headers).json()
+    assert before["manifest"] == after["manifest"] and before["sha256"] == after["sha256"]
+    assert before["payload"] == after["payload"]
+    with transaction(engine) as session:
+        old_occurrence = session.get(Occurrence, old_ids[0])
+        assert old_occurrence.identity_version == "occurrence-v1"
+        assert session.get(Revision, old_ids[1]).normalization_version == "normalization-v1"
+        assert session.get(Observation, old_ids[2]).revision_id == old_ids[1]
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(Audit)
+                .where(Audit.code == "IDENTITY_LEGACY_CONTINUED_V2")
+            )
+            == 2
+        )
+
+
+@pytest.mark.postgres
+def test_conflicting_legacy_timestamp_splits_are_quarantined_without_new_count(engine, store):
+    from pulse.models import Audit
+
+    source = _source(engine)
+    first = _legacy_v1(engine, store, source, _item())
+    second = _legacy_v1(engine, store, source, _item(published="2026-10-12T10:50+03:00"))
+    _capture(engine, store, source, [_item(published="2026-10-12T11:50+03:00")])
+    assert run_parser_once(engine, store)
+    assert _counts(engine) == (2, 2, 2, 3)
+    with transaction(engine) as session:
+        assert session.get(Occurrence, first[0]) and session.get(Occurrence, second[0])
+        diagnostic = session.scalar(
+            select(HealthInterval).where(HealthInterval.reason == "parse_rejected_items")
+        )
+        assert diagnostic.details["rejected"] == {"publication_identity_ambiguous": 1}
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(Audit)
+                .where(Audit.code == "IDENTITY_AMBIGUOUS_LEGACY_CANDIDATE")
+            )
+            == 2
+        )
+
+
+@pytest.mark.postgres
+def test_legacy_guid_reuse_with_distinct_urls_can_be_narrowed_to_matching_url(engine, store):
+    source = _source(engine)
+    first = _legacy_v1(engine, store, source, _item())
+    other = _item(published="2026-10-12T10:50+03:00")
+    other["url"] = "https://fixture.example/another-publication"
+    _legacy_v1(engine, store, source, other)
+    _capture(engine, store, source, [_item(published="2026-10-12T11:50+03:00")])
+    assert run_parser_once(engine, store)
+    assert _counts(engine) == (2, 3, 3, 3)
+    with transaction(engine) as session:
+        latest = session.scalar(
+            select(Observation).order_by(Observation.recorded_at.desc()).limit(1)
+        )
+        assert latest.occurrence_id == first[0]
+
+
+@pytest.mark.postgres
+def test_permission_expiry_during_identity_resolution_rolls_back_derived_content(engine, store):
+    source = _source(engine, validity_seconds=1)
+    _, event_id = _capture(engine, store, source, [_item()])
+    claimed = claim_parse(engine)
+    assert claimed
+
+    def wait(stage):
+        if stage == "before_effect_commit":
+            time.sleep(1.05)
+
+    process_parse(engine, store, *claimed, fault=wait)
+    assert _counts(engine) == (0, 0, 0, 0)
+    with transaction(engine) as session:
+        event = session.get(Outbox, event_id)
+        assert event.state == "DEAD" and event.error_code == "derived_policy_blocked"
+        assert session.scalar(
+            select(HealthInterval).where(HealthInterval.state == "RIGHTS_BLOCKED")
+        )
