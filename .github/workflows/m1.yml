@@ -1,0 +1,46 @@
+name: M1 offline invariants
+on:
+  push:
+    branches: ["feat/m1-durable-ingestion"]
+  pull_request:
+    paths: ["src/**", "tests/**", "migrations/**", "pyproject.toml", "uv.lock", ".github/workflows/m1.yml", "Dockerfile", "compose*.yaml", "scripts/**"]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: pulse
+          POSTGRES_PASSWORD: pulse
+          POSTGRES_DB: pulse_test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U pulse -d pulse_test" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      PULSE_DATABASE_URL: postgresql+psycopg://pulse:pulse@localhost:5432/pulse_test
+      PULSE_TEST_DATABASE_URL: postgresql+psycopg://pulse:pulse@localhost:5432/pulse_test
+      PULSE_OBJECT_ROOT: ./artifacts
+      PULSE_LIVE_ENABLED: "false"
+      PULSE_API_TOKEN: ci-reader-token
+      PULSE_AUDIT_TOKEN: ci-auditor-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.13"
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: make check
+      - run: uv run alembic upgrade head
+      - run: uv run alembic check
+      - run: uv run pytest -q --junitxml=test-results.xml
+      - run: uv run python -m pulse.cli seed-fixture && uv run python -m pulse.cli schedule && uv run python -m pulse.cli capture-fixture && uv run python -m pulse.cli parse && uv run python -m pulse.cli snapshot
+      - run: docker compose config --quiet
+      - run: bash scripts/compose_smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: m1-test-results
+          path: test-results.xml

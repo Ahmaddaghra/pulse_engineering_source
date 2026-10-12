@@ -1,0 +1,77 @@
+name: pulse-m1
+x-app: &app
+  build: .
+  image: pulse-m1:local
+  environment: &env
+    PULSE_DATABASE_URL: postgresql+psycopg://pulse:pulse@db:5432/pulse
+    PULSE_OBJECT_ROOT: /app/artifacts
+    PULSE_LIVE_ENABLED: "false"
+    PULSE_API_TOKEN: ${PULSE_API_TOKEN:?Set PULSE_API_TOKEN in .env}
+    PULSE_AUDIT_TOKEN: ${PULSE_AUDIT_TOKEN:?Set PULSE_AUDIT_TOKEN in .env}
+  volumes:
+    - objects:/app/artifacts
+  depends_on:
+    db:
+      condition: service_healthy
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse
+      POSTGRES_DB: pulse
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  scheduler:
+    <<: *app
+    profiles: ["workers"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "pulse.cli", "schedule", "--loop"]
+  collector:
+    <<: *app
+    profiles: ["workers"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "pulse.cli", "capture-fixture", "--loop"]
+  parser:
+    <<: *app
+    profiles: ["workers"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "pulse.cli", "parse", "--loop"]
+  reconciler:
+    <<: *app
+    profiles: ["workers"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "pulse.cli", "reconcile", "--loop", "--interval-seconds", "30"]
+volumes:
+  postgres:
+  objects:
