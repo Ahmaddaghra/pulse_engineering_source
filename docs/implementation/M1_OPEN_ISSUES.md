@@ -36,3 +36,42 @@ This work does not alter that PR or push to main. Original v0.1/v0.2 documents a
 M1 has no rights-qualified live panel, sustained operations, forecasting, event clustering,
 content-family attribution, editorial workflow or dashboard. Docker execution and WAL/PITR
 qualification are tracked separately from local PostgreSQL fault tests in M1_TEST_EVIDENCE.md.
+
+## Remaining engineering work and specification gaps
+
+| Item | State | Consequence / next verification |
+| --- | --- | --- |
+| Docker services locally | BLOCKED locally: Docker socket absent | Compose files validate; hosted CI must exercise image, migration and actual ASGI startup |
+| WAL/PITR and deletion-aware backup retention | BLOCKED / not configured | Logical restore passes; no production RPO/RTO or acknowledged-capture loss qualification |
+| Approved-origin live TLS/DNS/egress drill | BLOCKED: no confirmed publisher permissions | Network controls tested with synthetic resolvers/sockets only; keep live disabled |
+| Hard parser CPU/address-space sandbox and process quotas | NOT IMPLEMENTED | In-process structural/byte/time checks pass; isolated hostile-process exhaustion qualification remains |
+| Production DB roles, immutable remote object versions and tamper-resistant audit | NOT IMPLEMENTED | Local development uses a trusted DB operator and private filesystem |
+| Retention service operation and backup erasure | PARTIAL | Reconciler erases local expired/revoked bytes and derives invalidation; sustained erasure latency and remote/backup deletion need proof |
+| Multi-tenant/user authorization | NOT IMPLEMENTED | Two bearer capabilities are a single-operator deployment boundary |
+| Exact ambiguous occurrence identity | OPEN CONTRACT LIMIT | Same publisher/GUID/time reuse cannot be resolved as edit vs new publication without extra evidence |
+| Parser-version replay administration | PARTIAL | Version-addressed records and future-version invariance are tested; no general reparse/upgrade workflow |
+| Content-family/event identity and downstream event outbox | OUT OF M1 SLICE | No inferred content families, events or event-resolution worker; full v0.2 event/research manifests unavailable |
+| Coverage completeness and gap resolution | PARTIAL | All retained gaps stay visible and conservatively degrade results; no automatic completeness certification, closure, recovery warm-up or panel enrollment study |
+| Throughput, fairness and lock contention | UNQUALIFIED | Synthetic throttling/backlog cases pass; all evidence reads/writes serialize on an advisory lock and reads verify retained history before paging |
+| Production metrics/alerts and sustained service qualification | NOT IMPLEMENTED | DB/audit/API evidence exists; no prospective reliability, WAL/write amplification or latency benchmark |
+| Forecasting, sentiment, opinion estimation, paid integrations and dashboard | INTENTIONALLY EXCLUDED | No code/outputs/claims for these capabilities |
+
+`HEALTHY_EMPTY` means a valid, permitted, parsed offline observation checkpoint contains no items.
+It does not mean no news existed, and it does not assert event/editorial candidate qualification.
+The v0.2 editorial `NO_QUALIFIED_CANDIDATES` state requires later event/editorial logic and is not
+misused here. Polling success alone never qualifies a publisher panel.
+
+The XML transform is fixed as `xml-metadata-v1`; receipt/revision/manifest versions and an
+implementation source hash are recorded. Historical seals are references to stored state, not
+permission to recalculate old interpretations under changed code. Retrospective cutoff requests
+are rejected. Legal erasure takes precedence over replay; invalidations preserve the original
+manifest hash while payload replay becomes unavailable.
+
+Retry-After is parsed as seconds or HTTP-date and capped at seven days. There is at most one
+pending/leased capture per source and one active lease per shared rate scope. A real publisher's
+longer prescribed retry conditions would require a policy revision before live operation.
+Synthetic admission tests do not establish throughput or sustained fairness.
+
+One installed Starlette/httpx test-client deprecation warning remains. The locked dependencies
+work in executed tests; replacing the client should follow compatible FastAPI/Starlette guidance
+and a separate dependency update, not expand this runtime's dependency surface during M1.

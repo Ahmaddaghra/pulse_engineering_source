@@ -39,3 +39,13 @@ Pay particular attention to the distinction between **coverage surge** (panel ou
 5. Can a clean, paired and untouched evaluation disconfirm predictive lift?
 6. Would any editorial decision change given the predicted signal?
 7. Can this workflow beat NewsWhip-like existing capabilities in the target niche?
+
+## M1 observed-only implementation (feature branch)
+
+The Python/PostgreSQL offline vertical slice is documented in
+[the M1 handoff](docs/implementation/M1_HANDOFF.md),
+[implemented architecture](docs/implementation/M1_ARCHITECTURE.md),
+[data model](docs/implementation/M1_DATA_MODEL.md),
+[test evidence](docs/implementation/M1_TEST_EVIDENCE.md), and
+[remaining work](docs/implementation/M1_OPEN_ISSUES.md).
+It remains **PARTIAL / not operationally qualified**. Original design documents are preserved.
