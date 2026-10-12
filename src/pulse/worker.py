@@ -413,6 +413,7 @@ def process_parse(
     mark_available(engine, "parsed_receipt", receipt_id)
     # Delivery acknowledgment is deliberately separate from logical effects.
     with transaction(engine) as session:
+        evidence_lock(session)
         event = session.get(Outbox, event_id, with_for_update=True)
         if event is None:
             raise StaleLease("parse event no longer exists")

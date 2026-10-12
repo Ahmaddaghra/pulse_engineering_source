@@ -319,6 +319,11 @@ class HttpsAdapter:
         if remaining <= 0:
             raise CollectionError("collection deadline expired during resolution")
         connection = _PinnedHTTPSConnection(host, addresses[0], remaining)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            connection.close()
+            raise CollectionError("collection deadline expired during TLS context creation")
+        connection.timeout = remaining
         timer = threading.Timer(remaining, connection.abort)
         timer.daemon = True
         timer.start()

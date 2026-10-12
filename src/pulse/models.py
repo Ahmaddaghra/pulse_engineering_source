@@ -113,6 +113,7 @@ class Attempt(Base):
     tries: Mapped[int] = mapped_column(default=0)
     fence: Mapped[int] = mapped_column(default=0)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payload_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(80))
 
 

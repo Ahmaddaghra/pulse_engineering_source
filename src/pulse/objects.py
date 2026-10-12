@@ -6,7 +6,7 @@ import re
 import tempfile
 from pathlib import Path
 
-_KEY = re.compile(r"[a-f0-9-]+/[a-f0-9-]+/[a-f0-9]{64}\.json\Z")
+_KEY = re.compile(r"[a-f0-9-]+/[a-f0-9-]+/(?:[a-f0-9]{64}\.json|\.put-[a-z0-9_]+)\Z")
 
 
 class LocalObjectStore:
@@ -90,4 +90,5 @@ class LocalObjectStore:
                 os.close(fd)
 
     def keys(self) -> list[str]:
-        return sorted(str(path.relative_to(self.root)) for path in self.root.rglob("*.json"))
+        paths = [*self.root.rglob("*.json"), *self.root.rglob(".put-*")]
+        return sorted(str(path.relative_to(self.root)) for path in paths if path.is_file())

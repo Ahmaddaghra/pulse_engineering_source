@@ -404,3 +404,54 @@ def test_nonparser_consumption_cannot_establish_availability(engine, store):
         )
     with pytest.raises(ValueError, match="Parsing is not committed"):
         mark_available(engine, "parsed_receipt", receipt_id)
+
+
+def test_orphan_retention_deadline_overrides_active_lease(engine, settings, store):
+    approve(engine, retention_seconds=1)
+    claim = claimed(engine, settings)
+    with pytest.raises(Crash):
+        capture(engine, settings, store, adapter(), *claim, fault=crash_at("after_object_write"))
+    assert reconcile(engine, store)["orphans_deleted"] == 0  # Active and still permitted.
+    time.sleep(1.05)
+    with transaction(engine) as session:
+        assert session.get(Attempt, claim[0]).lease_until > db_now(session)
+    assert reconcile(engine, store)["orphans_deleted"] == 1
+    assert store.keys() == [] and count(engine, Receipt) == 0
+
+
+def test_interrupted_staging_write_reconciled(engine, settings, store):
+    from pathlib import Path
+
+    approve(engine)
+    claim = claimed(engine, settings)
+    with pytest.raises(Crash):
+        capture(engine, settings, store, adapter(), *claim, fault=crash_at("after_object_write"))
+    # A process killed inside object installation can leave its permitted staging bytes.
+    key = store.keys()[0]
+    staging = str(Path(key).parent / ".put-test1234")
+    (store.root / staging).write_bytes(store.read(key))
+    expire(engine, claim[0])
+    assert reconcile(engine, store)["orphans_deleted"] == 2
+    assert store.keys() == []
+
+
+def test_long_throttle_cannot_fill_backlog_and_starve_new_healthy_source(engine, settings, store):
+    approve(engine, "bad", poll_seconds=1)
+    schedule(engine, max_pending=2)
+    claim = claim_capture(engine, settings)
+    collector = FixtureAdapter(
+        lambda request: CollectionResponse(429, b"", datetime.now(UTC), retry_after="604800")
+    )
+    assert capture(engine, settings, store, collector, *claim) is None
+    for _ in range(3):
+        with transaction(engine) as session:
+            session.get(Source, "bad").next_due_at = db_now(session)
+        assert schedule(engine, max_pending=2) == []
+    approve(engine, "healthy")
+    assert len(schedule(engine, max_pending=2)) == 1
+    healthy_claim = claim_capture(engine, settings)
+    assert healthy_claim
+    with transaction(engine) as session:
+        assert session.get(Attempt, healthy_claim[0]).source_id == "healthy"
+    assert capture(engine, settings, store, adapter(), *healthy_claim)
+    assert count(engine, Attempt) == 2

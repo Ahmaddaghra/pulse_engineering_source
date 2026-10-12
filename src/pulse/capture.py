@@ -22,7 +22,16 @@ from pulse.collection import (
 from pulse.config import Settings
 from pulse.db import db_now, evidence_lock, transaction
 from pulse.errors import PolicyBlocked, StaleLease
-from pulse.models import Artifact, Attempt, HealthInterval, OriginBudget, Outbox, Receipt, Source
+from pulse.models import (
+    Artifact,
+    Attempt,
+    HealthInterval,
+    OriginBudget,
+    Outbox,
+    Policy,
+    Receipt,
+    Source,
+)
 from pulse.objects import LocalObjectStore
 from pulse.policy import require_policy
 
@@ -49,8 +58,42 @@ def schedule(engine: Engine, *, limit: int = 100, max_pending: int = 1000) -> li
             .limit(limit)
             .with_for_update()
         ):
+            existing = session.scalar(
+                select(Attempt)
+                .where(Attempt.source_id == source.id, Attempt.state.in_(["PENDING", "LEASED"]))
+                .limit(1)
+            )
+            if existing is not None:
+                # One durable attempt/retry chain per source; throttles cannot flood the backlog.
+                budget = session.get(OriginBudget, existing.rate_scope)
+                policy = session.get(Policy, existing.policy_id)
+                delay = policy.poll_seconds if policy is not None else 60
+                source.next_due_at = max(
+                    now + timedelta(seconds=delay),
+                    budget.next_allowed_at if budget is not None else now,
+                )
+                continue
             if pending >= max_pending:
-                break
+                if not session.scalar(
+                    select(HealthInterval.id)
+                    .where(
+                        HealthInterval.source_id == source.id,
+                        HealthInterval.reason == "SCHEDULER_BACKPRESSURE",
+                        HealthInterval.ended_at.is_(None),
+                    )
+                    .limit(1)
+                ):
+                    session.add(
+                        HealthInterval(
+                            source_id=source.id,
+                            state="UNAVAILABLE",
+                            reason="SCHEDULER_BACKPRESSURE",
+                            started_at=source.next_due_at,
+                            ended_at=None,
+                            recorded_at=now,
+                        )
+                    )
+                continue
             try:
                 policy = require_policy(session, source.id)
             except PolicyBlocked:
@@ -151,6 +194,7 @@ def claim_capture(engine: Engine, settings: Settings) -> tuple[str, int] | None:
             attempt.fence += 1
             attempt.tries += 1
             attempt.state = "LEASED"
+            attempt.payload_expires_at = None
             attempt.lease_until = now + timedelta(seconds=settings.lease_seconds)
             return attempt.id, attempt.fence
     return None
@@ -303,7 +347,7 @@ def capture(
             )
         with transaction(engine) as session:
             evidence_lock(session)
-            _fenced(session, fetch_id, fence)
+            attempt = _fenced(session, fetch_id, fence)
             policy = require_policy(session, source_id, policy_id)
             now = db_now(session)
             if response.received_at > now + timedelta(seconds=1):
@@ -348,6 +392,7 @@ def capture(
                 )
                 if expires <= now:
                     raise CollectionError("Representation retention already expired")
+                attempt.payload_expires_at = expires
                 # The rights lock is released during I/O. Acceptance rechecks below.
         if response.status == 304 and key is None:
             _failure(engine, settings, fetch_id, fence, "CACHE_MISSING")

@@ -97,6 +97,9 @@ def reconcile(engine: Engine, store: LocalObjectStore) -> dict[str, int]:
                 and attempt.state == "LEASED"
                 and attempt.lease_until is not None
                 and attempt.lease_until > now
+                and fetch_component == f"{attempt.id}-{attempt.fence}"
+                and attempt.payload_expires_at is not None
+                and attempt.payload_expires_at > now
             ):
                 continue  # A live object's DB acceptance may be waiting on this lock.
             store.delete(key)

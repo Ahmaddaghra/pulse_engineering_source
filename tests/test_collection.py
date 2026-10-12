@@ -473,8 +473,10 @@ def test_publisher_claim_precision(value: str | None, precision: str) -> None:
     assert published_precision(value) == precision
 
 
+@pytest.mark.parametrize("deadline_source", ["request_timeout", "capability_expiry"])
 def test_absolute_transport_deadline_interrupts_a_blocked_body_read(
     monkeypatch: pytest.MonkeyPatch,
+    deadline_source: str,
 ) -> None:
     """Use an AF_UNIX socket pair: exercise timer interruption with zero network access."""
     reader, writer = socket.socketpair()
@@ -498,8 +500,18 @@ def test_absolute_transport_deadline_interrupts_a_blocked_body_read(
     adapter = HttpsAdapter(live_enabled=True, resolver=lambda host, timeout: (PUBLIC_ADDRESS,))
     started = collection.time.monotonic()
     try:
+        grant = capability()
+        request_timeout = 0.03
+        if deadline_source == "capability_expiry":
+            grant = CollectionCapability(
+                "approval-v1",
+                ENDPOINT,
+                HOST,
+                datetime.now(UTC) + timedelta(seconds=0.03),
+            )
+            request_timeout = 1.0
         with pytest.raises(CollectionError, match="deadline"):
-            collect(adapter, capability=capability(), timeout_seconds=0.03)
+            collect(adapter, capability=grant, timeout_seconds=request_timeout)
         assert collection.time.monotonic() - started < 1.0
     finally:
         reader.close()
@@ -571,3 +583,87 @@ def test_zero_item_budget_accepts_a_healthy_empty_feed_only() -> None:
 def test_malformed_rss_structure_cannot_become_healthy_empty(body: bytes) -> None:
     with pytest.raises(CollectionError, match="channel"):
         parse_feed(body)
+
+
+def test_expired_capability_prevents_resolution_and_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_resolution(host: str, timeout: float) -> tuple[str, ...]:
+        pytest.fail("expired capability reached DNS")
+
+    def forbidden_connection(*args: object) -> FakeConnection:
+        pytest.fail("expired capability reached connection construction")
+
+    monkeypatch.setattr(collection, "_PinnedHTTPSConnection", forbidden_connection)
+    grant = CollectionCapability(
+        "approval-v1", ENDPOINT, HOST, datetime.now(UTC) - timedelta(seconds=1)
+    )
+    with pytest.raises(CollectionBlocked, match="expired"):
+        collect(HttpsAdapter(live_enabled=True, resolver=forbidden_resolution), capability=grant)
+
+
+def test_capability_lifetime_clamps_resolution_and_connection_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    budgets: list[float] = []
+
+    def resolver(host: str, timeout: float) -> tuple[str, ...]:
+        budgets.append(timeout)
+        return (PUBLIC_ADDRESS,)
+
+    monkeypatch.setattr(collection, "_PinnedHTTPSConnection", FakeConnection)
+    FakeConnection.instances = []
+    FakeConnection.response = FakeResponse()
+    adapter = HttpsAdapter(live_enabled=True, resolver=resolver)
+    grant = CollectionCapability(
+        "approval-v1", ENDPOINT, HOST, datetime.now(UTC) + timedelta(seconds=0.2)
+    )
+    result = collect(adapter, capability=grant, timeout_seconds=30)
+    assert result.status == 200
+    assert 0 < budgets[0] <= 0.2
+    assert 0 < FakeConnection.instances[0].timeout <= budgets[0]
+
+
+def test_capability_expiring_during_resolution_prevents_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tick = [100.0]
+
+    def resolver(host: str, timeout: float) -> tuple[str, ...]:
+        tick[0] = 101.0
+        return (PUBLIC_ADDRESS,)
+
+    def forbidden_connection(*args: object) -> FakeConnection:
+        pytest.fail("expired resolution budget reached a connection")
+
+    monkeypatch.setattr(collection.time, "monotonic", lambda: tick[0])
+    monkeypatch.setattr(collection, "_PinnedHTTPSConnection", forbidden_connection)
+    grant = CollectionCapability(
+        "approval-v1", ENDPOINT, HOST, datetime.now(UTC) + timedelta(seconds=0.2)
+    )
+    with pytest.raises(CollectionError, match="resolution"):
+        collect(HttpsAdapter(live_enabled=True, resolver=resolver), capability=grant)
+
+
+def test_capability_expiring_during_tls_context_creation_prevents_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tick = [100.0]
+
+    class SlowConstruction(FakeConnection):
+        def __init__(self, host: str, address: str, timeout: float) -> None:
+            super().__init__(host, address, timeout)
+            tick[0] = 101.0
+
+    monkeypatch.setattr(collection.time, "monotonic", lambda: tick[0])
+    monkeypatch.setattr(collection, "_PinnedHTTPSConnection", SlowConstruction)
+    SlowConstruction.instances = []
+    SlowConstruction.response = FakeResponse()
+    grant = CollectionCapability(
+        "approval-v1", ENDPOINT, HOST, datetime.now(UTC) + timedelta(seconds=0.2)
+    )
+    adapter = HttpsAdapter(live_enabled=True, resolver=lambda host, timeout: (PUBLIC_ADDRESS,))
+    with pytest.raises(CollectionError, match="deadline"):
+        collect(adapter, capability=grant)
+    assert SlowConstruction.instances[0].request_args is None
+    assert SlowConstruction.instances[0].closed
